@@ -41,8 +41,7 @@ except ImportError as e:
 st.set_page_config(
     page_title="SafetyEagle AI - PPE Monitoring",
     page_icon="🦅",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # Custom CSS for SafetyEagle branding
@@ -93,13 +92,6 @@ st.markdown("""
         margin-top: 1.5rem;
         margin-bottom: 1rem;
     }
-    .mobile-feature-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        margin: 1rem 0;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -128,8 +120,6 @@ if 'demo_mode' not in st.session_state:
     st.session_state.demo_mode = False
 if 'mobile_camera_active' not in st.session_state:
     st.session_state.mobile_camera_active = False
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Live Monitoring"
 
 # Load model with caching and get all classes
 @st.cache_resource(show_spinner="Loading SafetyEagle AI Model...")
@@ -401,15 +391,9 @@ def main():
     # Sidebar navigation
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🧭 Navigation")
-    
-    # Use radio buttons for navigation instead of switch_page
     page = st.sidebar.radio("Go to", 
-        ["Live Monitoring", "Mobile Camera", "Class Selection", "Camera Setup", "Settings", "Dashboard", "Reports", "Deployment Guide"])
+        ["Class Selection", "Camera Setup", "Mobile Camera", "Settings", "Live Monitoring", "Dashboard", "Reports", "Deployment Guide"])
     
-    # Update current page in session state
-    st.session_state.current_page = page
-    
-    # Show the appropriate page based on selection
     if page == "Class Selection":
         show_class_selection()
     elif page == "Camera Setup":
@@ -437,14 +421,6 @@ def show_mobile_camera():
     if not st.session_state.selected_ppe:
         st.warning("⚠️ Please select classes to monitor first on the Class Selection page!")
         return
-    
-    # Mobile feature introduction
-    st.markdown("""
-    <div class='mobile-feature-card'>
-        <h3 style='color: white; margin: 0;'>📱 Instant Safety Checks</h3>
-        <p style='color: white; margin: 0.5rem 0 0 0;'>Use your mobile camera for real-time safety compliance analysis</p>
-    </div>
-    """, unsafe_allow_html=True)
     
     st.info("""
     **📱 Mobile Usage Instructions:**
@@ -492,7 +468,7 @@ def show_mobile_camera():
     
     # Quick actions
     st.subheader("⚡ Quick Actions")
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
         if st.button("🔄 New Safety Check", use_container_width=True):
@@ -501,122 +477,7 @@ def show_mobile_camera():
     
     with col2:
         if st.button("📊 View Dashboard", use_container_width=True):
-            st.session_state.current_page = "Dashboard"
-            st.rerun()
-    
-    with col3:
-        if st.button("⚙️ Settings", use_container_width=True):
-            st.session_state.current_page = "Settings"
-            st.rerun()
-
-def show_live_monitoring():
-    st.markdown('<h2 class="section-header">📹 Live Safety Monitoring</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.model_loaded:
-        st.error("❌ Please wait for model initialization on the Class Selection page first.")
-        return
-    
-    if not st.session_state.selected_ppe:
-        st.warning("⚠️ Please select classes to monitor first on the Class Selection page!")
-        return
-    
-    # Display current configuration
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("Monitoring Controls")
-        
-        # Camera options - updated to include mobile camera
-        camera_mode = st.radio(
-            "Select Input Source:",
-            ["IP Camera", "Mobile Camera", "Test Mode", "Upload Video"],
-            help="Choose your video source"
-        )
-        
-        # IP Camera selection
-        if camera_mode == "IP Camera":
-            if st.session_state.camera_urls:
-                selected_url = st.selectbox(
-                    "Select Saved Camera:",
-                    st.session_state.camera_urls,
-                    help="Choose from your saved camera URLs"
-                )
-                new_url = st.text_input("Or enter new camera URL:")
-                camera_url = new_url if new_url else selected_url
-            else:
-                camera_url = st.text_input(
-                    "Enter IP Camera URL:",
-                    placeholder="rtsp://username:password@ip:port/stream"
-                )
-        
-        # Performance info
-        st.info(f"""
-        **Current Settings:**
-        - Monitoring: {len(st.session_state.selected_ppe)} classes
-        - Confidence: {st.session_state.detection_settings.get('confidence', 0.5)}
-        - Speed: {st.session_state.detection_settings.get('speed', 'medium').title()}
-        - Frame Skip: {st.session_state.detection_settings.get('frame_skip', 3)}
-        """)
-        
-        # Start buttons
-        if camera_mode == "IP Camera":
-            if camera_url:
-                if st.button("🌐 Start IP Camera", type="primary"):
-                    if CV2_AVAILABLE:
-                        st.session_state.monitoring = True
-                        start_ip_camera_monitoring(camera_url)
-                    else:
-                        st.error("❌ OpenCV not available for camera streaming")
-                
-                if st.button("⏹️ Stop Monitoring"):
-                    st.session_state.monitoring = False
-                    st.rerun()
-            else:
-                st.warning("Please enter an IP camera URL first")
-        
-        elif camera_mode == "Mobile Camera":
-            st.info("📱 Use the Mobile Camera tab for direct photo analysis")
-            if st.button("📱 Go to Mobile Camera", type="primary"):
-                st.session_state.current_page = "Mobile Camera"
-                st.rerun()
-                
-        elif camera_mode == "Test Mode":
-            if st.button("🧪 Start Test Mode", type="primary"):
-                st.session_state.monitoring = True
-                start_test_mode()
-            
-            if st.button("⏹️ Stop Test Mode"):
-                st.session_state.monitoring = False
-                st.rerun()
-                
-        elif camera_mode == "Upload Video":
-            uploaded_file = st.file_uploader("Choose a video file", type=['mp4', 'avi', 'mov'])
-            if uploaded_file and st.button("🎬 Process Video"):
-                if CV2_AVAILABLE:
-                    process_uploaded_video(uploaded_file)
-                else:
-                    st.error("❌ OpenCV not available for video processing")
-    
-    with col2:
-        st.subheader("Live Stats")
-        st.metric("Violations Detected", len(st.session_state.violations))
-        st.metric("Monitoring Status", "ACTIVE" if st.session_state.monitoring else "INACTIVE")
-        st.metric("Selected Classes", len(st.session_state.selected_ppe))
-        st.metric("Model Mode", "DEMO" if st.session_state.demo_mode else "PRODUCTION")
-        
-        # Quick navigation
-        st.subheader("Quick Navigation")
-        if st.button("📱 Mobile Camera", use_container_width=True):
-            st.session_state.current_page = "Mobile Camera"
-            st.rerun()
-        if st.button("🎯 Class Selection", use_container_width=True):
-            st.session_state.current_page = "Class Selection"
-            st.rerun()
-        if st.button("📊 Dashboard", use_container_width=True):
-            st.session_state.current_page = "Dashboard"
-            st.rerun()
-
-# ... (keep all the other functions exactly the same as in your previous code: show_class_selection, show_camera_setup, show_settings, start_ip_camera_monitoring, run_monitoring_loop, start_test_mode, create_custom_test_image, process_uploaded_video, check_for_violations, save_violation, show_dashboard, show_reports, generate_excel_report, show_deployment_guide)
+            st.switch_page("Dashboard")
 
 def show_class_selection():
     st.markdown('<h2 class="section-header">🎯 Select Detection Classes</h2>', unsafe_allow_html=True)
@@ -844,6 +705,100 @@ def show_settings():
     st.subheader("Currently Selected Classes")
     selected_classes_display = [f"{class_id}: {class_name}" for class_id, class_name in st.session_state.selected_ppe.items()]
     st.info(f"**Monitoring {len(selected_classes_display)} classes:** {', '.join(selected_classes_display[:5])}{'...' if len(selected_classes_display) > 5 else ''}")
+
+def show_live_monitoring():
+    st.markdown('<h2 class="section-header">📹 Live Safety Monitoring</h2>', unsafe_allow_html=True)
+    
+    if not st.session_state.model_loaded:
+        st.error("❌ Please wait for model initialization on the Class Selection page first.")
+        return
+    
+    if not st.session_state.selected_ppe:
+        st.warning("⚠️ Please select classes to monitor first on the Class Selection page!")
+        return
+    
+    # Display current configuration
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Monitoring Controls")
+        
+        # Camera options - updated to include mobile camera
+        camera_mode = st.radio(
+            "Select Input Source:",
+            ["IP Camera", "Mobile Camera", "Test Mode", "Upload Video"],
+            help="Choose your video source"
+        )
+        
+        # IP Camera selection
+        if camera_mode == "IP Camera":
+            if st.session_state.camera_urls:
+                selected_url = st.selectbox(
+                    "Select Saved Camera:",
+                    st.session_state.camera_urls,
+                    help="Choose from your saved camera URLs"
+                )
+                new_url = st.text_input("Or enter new camera URL:")
+                camera_url = new_url if new_url else selected_url
+            else:
+                camera_url = st.text_input(
+                    "Enter IP Camera URL:",
+                    placeholder="rtsp://username:password@ip:port/stream"
+                )
+        
+        # Performance info
+        st.info(f"""
+        **Current Settings:**
+        - Monitoring: {len(st.session_state.selected_ppe)} classes
+        - Confidence: {st.session_state.detection_settings.get('confidence', 0.5)}
+        - Speed: {st.session_state.detection_settings.get('speed', 'medium').title()}
+        - Frame Skip: {st.session_state.detection_settings.get('frame_skip', 3)}
+        """)
+        
+        # Start buttons
+        if camera_mode == "IP Camera":
+            if camera_url:
+                if st.button("🌐 Start IP Camera", type="primary"):
+                    if CV2_AVAILABLE:
+                        st.session_state.monitoring = True
+                        start_ip_camera_monitoring(camera_url)
+                    else:
+                        st.error("❌ OpenCV not available for camera streaming")
+                
+                if st.button("⏹️ Stop Monitoring"):
+                    st.session_state.monitoring = False
+                    st.rerun()
+            else:
+                st.warning("Please enter an IP camera URL first")
+        
+        elif camera_mode == "Mobile Camera":
+            st.info("📱 Switch to the 'Mobile Camera' tab for direct mobile camera analysis")
+            if st.button("📱 Go to Mobile Camera"):
+                st.switch_page("Mobile Camera")
+                
+        elif camera_mode == "Test Mode":
+            if st.button("🧪 Start Test Mode", type="primary"):
+                st.session_state.monitoring = True
+                start_test_mode()
+            
+            if st.button("⏹️ Stop Test Mode"):
+                st.session_state.monitoring = False
+                st.rerun()
+                
+        elif camera_mode == "Upload Video":
+            uploaded_file = st.file_uploader("Choose a video file", type=['mp4', 'avi', 'mov'])
+            if uploaded_file and st.button("🎬 Process Video"):
+                if CV2_AVAILABLE:
+                    process_uploaded_video(uploaded_file)
+                else:
+                    st.error("❌ OpenCV not available for video processing")
+    
+    with col2:
+        st.subheader("Live Stats")
+        st.metric("Violations Detected", len(st.session_state.violations))
+        st.metric("Monitoring Status", "ACTIVE" if st.session_state.monitoring else "INACTIVE")
+        st.metric("Selected Classes", len(st.session_state.selected_ppe))
+        st.metric("Model Mode", "DEMO" if st.session_state.demo_mode else "PRODUCTION")
 
 def start_ip_camera_monitoring(camera_url):
     """IP camera monitoring"""
