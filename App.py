@@ -108,40 +108,42 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
-if 'violations' not in st.session_state:
-    st.session_state.violations = []
-if 'monitoring' not in st.session_state:
-    st.session_state.monitoring = False
-if 'model' not in st.session_state:
-    st.session_state.model = None
-if 'selected_ppe' not in st.session_state:
-    st.session_state.selected_ppe = {}
-if 'detection_settings' not in st.session_state:
-    st.session_state.detection_settings = {
-        'confidence': 0.5,
-        'speed': 'medium',
-        'frame_skip': 3
-    }
-if 'camera_urls' not in st.session_state:
-    st.session_state.camera_urls = []
-if 'available_classes' not in st.session_state:
-    st.session_state.available_classes = {}
-if 'model_loaded' not in st.session_state:
-    st.session_state.model_loaded = False
-if 'demo_mode' not in st.session_state:
-    st.session_state.demo_mode = False
-if 'project_info' not in st.session_state:
-    st.session_state.project_info = {
-        'company_name': '',
-        'project_name': '',
-        'engineer_name': '',
-        'contractor_name': '',
-        'work_type': 'Drilling Operations',
-        'project_hours': 8,  # Changed from 0 to 8 to fix the error
-        'workers_assigned': 1,  # Changed from 0 to 1 to fix potential error
-        'start_date': datetime.now()
-    }
+# Initialize session state with safe default values
+def initialize_session_state():
+    """Initialize all session state variables with safe defaults"""
+    if 'violations' not in st.session_state:
+        st.session_state.violations = []
+    if 'monitoring' not in st.session_state:
+        st.session_state.monitoring = False
+    if 'model' not in st.session_state:
+        st.session_state.model = None
+    if 'selected_ppe' not in st.session_state:
+        st.session_state.selected_ppe = {}
+    if 'detection_settings' not in st.session_state:
+        st.session_state.detection_settings = {
+            'confidence': 0.5,
+            'speed': 'medium',
+            'frame_skip': 3
+        }
+    if 'camera_urls' not in st.session_state:
+        st.session_state.camera_urls = []
+    if 'available_classes' not in st.session_state:
+        st.session_state.available_classes = {}
+    if 'model_loaded' not in st.session_state:
+        st.session_state.model_loaded = False
+    if 'demo_mode' not in st.session_state:
+        st.session_state.demo_mode = False
+    if 'project_info' not in st.session_state:
+        st.session_state.project_info = {
+            'company_name': 'ABC Oil & Gas Corp',
+            'project_name': 'North Field Drilling Project',
+            'engineer_name': 'John Safety Officer',
+            'contractor_name': 'XYZ Contracting Ltd',
+            'work_type': 'Drilling Operations',
+            'project_hours': 240,  # Safe default value
+            'workers_assigned': 12,  # Safe default value
+            'start_date': datetime.now()
+        }
 
 # Standard Oil & Gas PPE classes
 OIL_GAS_PPE_CLASSES = {
@@ -211,6 +213,8 @@ def load_model_and_classes():
 
 def initialize_app():
     """Initialize the app and load model on startup"""
+    initialize_session_state()  # Ensure session state is properly initialized
+    
     if not st.session_state.model_loaded:
         with st.spinner("🦅 Initializing SafetyEagle AI System for Oil & Gas Safety..."):
             model, available_classes, model_path = load_model_and_classes()
@@ -302,10 +306,24 @@ def show_project_setup():
              "Refinery Maintenance", "Offshore Operations", "Hazardous Area Work", "Other"],
             index=0
         )
-        project_hours = st.number_input("Project Duration (hours)", min_value=1, max_value=10000, 
-                                      value=st.session_state.project_info['project_hours'])
-        workers_assigned = st.number_input("Number of Workers Assigned", min_value=1, max_value=500, 
-                                         value=st.session_state.project_info['workers_assigned'])
+        
+        # Safe number inputs with validation
+        project_hours = st.number_input(
+            "Project Duration (hours)", 
+            min_value=1, 
+            max_value=10000,
+            value=max(1, st.session_state.project_info['project_hours']),  # Ensure value is at least 1
+            step=1
+        )
+        
+        workers_assigned = st.number_input(
+            "Number of Workers Assigned", 
+            min_value=1, 
+            max_value=500,
+            value=max(1, st.session_state.project_info['workers_assigned']),  # Ensure value is at least 1
+            step=1
+        )
+        
         start_date = st.date_input("Project Start Date", value=st.session_state.project_info['start_date'])
     
     # Save project information
@@ -345,8 +363,9 @@ def show_ppe_selection():
     st.markdown('<h2 class="section-header">🛡️ PPE Equipment Selection</h2>', unsafe_allow_html=True)
     
     # Use demo classes if model not loaded
-    if not st.session_state.model_loaded:
+    if not st.session_state.model_loaded or not st.session_state.available_classes:
         st.session_state.available_classes = OIL_GAS_PPE_CLASSES
+        st.info("🦅 Using standard Oil & Gas PPE classes for demonstration")
     
     st.info("Select the required Personal Protective Equipment for your oil & gas project")
     
@@ -358,63 +377,66 @@ def show_ppe_selection():
     # Create columns for better organization
     num_columns = 3
     classes_list = list(available_classes.items())
-    classes_per_column = (len(classes_list) + num_columns - 1) // num_columns
     
-    cols = st.columns(num_columns)
-    
-    selected_classes = st.session_state.selected_ppe.copy()
-    
-    for i, (class_id, class_name) in enumerate(classes_list):
-        col_idx = i // classes_per_column
-        with cols[col_idx]:
-            is_selected = st.checkbox(
-                f"**{class_name}**",
-                value=class_id in selected_classes,
-                key=f"ppe_{class_id}",
-                help=f"Class ID: {class_id}"
-            )
-            if is_selected:
-                selected_classes[class_id] = class_name
-            elif class_id in selected_classes:
-                del selected_classes[class_id]
-    
-    # Selection actions
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("✅ Select All PPE", use_container_width=True):
-            st.session_state.selected_ppe = available_classes.copy()
-            st.success("✅ All PPE equipment selected!")
-            st.rerun()
-    
-    with col2:
-        if st.button("🔄 Basic Oil & Gas Set", use_container_width=True):
-            # Basic selection for oil & gas
-            basic_ppe = {0: "Hard Hat", 1: "Safety Glasses", 2: "High-Vis Vest", 3: "Safety Gloves", 4: "Safety Boots"}
-            st.session_state.selected_ppe = {k: v for k, v in available_classes.items() if v in basic_ppe.values()}
-            st.info("🔄 Basic oil & gas PPE set selected")
-            st.rerun()
-    
-    with col3:
-        if st.button("💾 Save PPE Selection", type="primary", use_container_width=True):
-            st.session_state.selected_ppe = selected_classes
-            st.success(f"✅ Saved {len(selected_classes)} PPE items for monitoring!")
-    
-    # Show current selection
-    if selected_classes:
-        st.subheader("Current PPE Selection")
-        st.info(f"**Selected {len(selected_classes)} out of {len(available_classes)} PPE items:**")
+    if classes_list:
+        classes_per_column = (len(classes_list) + num_columns - 1) // num_columns
+        cols = st.columns(num_columns)
         
-        # Display in a nice grid
-        selected_items = list(selected_classes.values())
-        num_cols = 3
-        summary_cols = st.columns(num_cols)
+        selected_classes = st.session_state.selected_ppe.copy()
         
-        for i, item in enumerate(selected_items):
-            with summary_cols[i % num_cols]:
-                st.markdown(f'<div class="ppe-item">✅ <strong>{item}</strong></div>', unsafe_allow_html=True)
+        for i, (class_id, class_name) in enumerate(classes_list):
+            col_idx = i // classes_per_column
+            with cols[col_idx]:
+                is_selected = st.checkbox(
+                    f"**{class_name}**",
+                    value=class_id in selected_classes,
+                    key=f"ppe_{class_id}",
+                    help=f"Class ID: {class_id}"
+                )
+                if is_selected:
+                    selected_classes[class_id] = class_name
+                elif class_id in selected_classes:
+                    del selected_classes[class_id]
+        
+        # Selection actions
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("✅ Select All PPE", use_container_width=True):
+                st.session_state.selected_ppe = available_classes.copy()
+                st.success("✅ All PPE equipment selected!")
+                st.rerun()
+        
+        with col2:
+            if st.button("🔄 Basic Oil & Gas Set", use_container_width=True):
+                # Basic selection for oil & gas
+                basic_ppe = {0: "Hard Hat", 1: "Safety Glasses", 2: "High-Vis Vest", 3: "Safety Gloves", 4: "Safety Boots"}
+                st.session_state.selected_ppe = {k: v for k, v in available_classes.items() if v in basic_ppe.values()}
+                st.info("🔄 Basic oil & gas PPE set selected")
+                st.rerun()
+        
+        with col3:
+            if st.button("💾 Save PPE Selection", type="primary", use_container_width=True):
+                st.session_state.selected_ppe = selected_classes
+                st.success(f"✅ Saved {len(selected_classes)} PPE items for monitoring!")
+        
+        # Show current selection
+        if selected_classes:
+            st.subheader("Current PPE Selection")
+            st.info(f"**Selected {len(selected_classes)} out of {len(available_classes)} PPE items:**")
+            
+            # Display in a nice grid
+            selected_items = list(selected_classes.values())
+            num_cols = 3
+            summary_cols = st.columns(num_cols)
+            
+            for i, item in enumerate(selected_items):
+                with summary_cols[i % num_cols]:
+                    st.markdown(f'<div class="ppe-item">✅ <strong>{item}</strong></div>', unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ No PPE selected. Please select at least one safety equipment item.")
     else:
-        st.warning("⚠️ No PPE selected. Please select at least one safety equipment item.")
+        st.error("❌ No PPE classes available. Please check model initialization.")
 
 def show_camera_setup():
     """Camera setup tab"""
@@ -618,12 +640,11 @@ def show_dashboard():
         with st.expander(f"Violation {i+1} - {violation['timestamp'].strftime('%H:%M:%S')}"):
             col1, col2 = st.columns([1, 2])
             with col1:
-                if 'image' in violation:
-                    # Create a simple placeholder for demo
-                    img_placeholder = np.ones((200, 300, 3), dtype=np.uint8) * 100
-                    cv2.putText(img_placeholder, "Violation Capture", (50, 100), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                    st.image(img_placeholder, use_column_width=True)
+                # Create a simple placeholder for demo
+                img_placeholder = np.ones((200, 300, 3), dtype=np.uint8) * 100
+                cv2.putText(img_placeholder, "Violation Capture", (50, 100), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                st.image(img_placeholder, use_column_width=True)
             with col2:
                 st.write(f"**Missing PPE:** {violation['missing_classes']}")
                 st.write(f"**Time:** {violation['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
