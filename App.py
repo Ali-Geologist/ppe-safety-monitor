@@ -1,18 +1,9 @@
 import streamlit as st
-try:
-    import cv2
-except ImportError:
-    st.error("OpenCV not installed properly")
-import pandas as pd
-import numpy as np
-from ultralytics import YOLO
-import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import time
 import os
-os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
 from pathlib import Path
 import tempfile
 from PIL import Image
@@ -118,8 +109,6 @@ if 'model_loaded' not in st.session_state:
     st.session_state.model_loaded = False
 if 'demo_mode' not in st.session_state:
     st.session_state.demo_mode = False
-if 'mobile_camera_active' not in st.session_state:
-    st.session_state.mobile_camera_active = False
 
 # Load model with caching and get all classes
 @st.cache_resource(show_spinner="Loading SafetyEagle AI Model...")
@@ -235,121 +224,6 @@ def test_ip_camera(url, timeout=5):
     except Exception as e:
         return False, f"❌ Camera test failed: {e}"
 
-def process_mobile_camera_image(picture):
-    """Process image from mobile camera"""
-    if picture is None:
-        return None
-    
-    try:
-        # Convert to OpenCV format
-        bytes_data = picture.getvalue()
-        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-        
-        if cv2_img is None:
-            st.error("❌ Failed to process camera image")
-            return None
-        
-        return cv2_img
-    except Exception as e:
-        st.error(f"❌ Error processing camera image: {e}")
-        return None
-
-def analyze_single_image(image, image_source="Mobile Camera"):
-    """Analyze a single image for safety compliance"""
-    if not st.session_state.model_loaded:
-        st.error("❌ Model not loaded. Please wait for initialization.")
-        return
-    
-    if not st.session_state.selected_ppe:
-        st.error("❌ No classes selected. Please select classes first.")
-        return
-    
-    confidence = st.session_state.detection_settings.get('confidence', 0.5)
-    selected_classes = list(st.session_state.selected_ppe.keys())
-    speed_params = st.session_state.detection_settings.get('speed_params', {'imgsz': 640, 'half': False})
-    
-    with st.spinner("🔍 Analyzing image for safety compliance..."):
-        try:
-            # Run detection
-            results = st.session_state.model(
-                image, 
-                conf=confidence,
-                classes=selected_classes,
-                verbose=False,
-                **speed_params
-            )
-            
-            # Check for violations
-            violations = check_for_violations(results, selected_classes)
-            annotated_frame = results[0].plot()
-            
-            # Convert back to RGB for display
-            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-            
-            # Display results
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("📸 Original Image")
-                original_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                st.image(original_rgb, caption=f"{image_source} - Original", use_column_width=True)
-            
-            with col2:
-                st.subheader("🎯 Safety Analysis")
-                st.image(annotated_frame_rgb, caption=f"{image_source} - Safety Analysis", use_column_width=True)
-            
-            # Show compliance status
-            if violations:
-                st.error(f"🚨 **SAFETY VIOLATION DETECTED!**")
-                st.warning(f"**Missing Safety Equipment:** {', '.join(violations)}")
-                
-                # Save violation
-                save_violation(image, violations)
-                
-                # Show alert
-                st.markdown("""
-                <div style='background-color: #ffcccc; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #ff0000;'>
-                    <h4 style='color: #cc0000; margin: 0;'>⚠️ IMMEDIATE ACTION REQUIRED</h4>
-                    <p style='margin: 0.5rem 0 0 0;'>Please ensure all required safety equipment is worn before proceeding.</p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.success(f"✅ **SAFETY COMPLIANCE VERIFIED**")
-                st.info(f"All required safety equipment detected: {', '.join(st.session_state.selected_ppe.values())}")
-                
-                # Show success card
-                st.markdown("""
-                <div style='background-color: #ccffcc; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #00cc00;'>
-                    <h4 style='color: #006600; margin: 0;'>✓ SAFETY STANDARDS MET</h4>
-                    <p style='margin: 0.5rem 0 0 0;'>All personnel are properly equipped with required safety gear.</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Show detection details
-            with st.expander("📊 Detection Details"):
-                if results and len(results) > 0:
-                    detected_objects = []
-                    for box in results[0].boxes:
-                        class_id = int(box.cls[0])
-                        confidence = float(box.conf[0])
-                        class_name = st.session_state.available_classes.get(class_id, f"Class {class_id}")
-                        detected_objects.append({
-                            'class': class_name,
-                            'confidence': f"{confidence:.2%}",
-                            'class_id': class_id
-                        })
-                    
-                    if detected_objects:
-                        st.write("**Detected Objects:**")
-                        for obj in detected_objects:
-                            status = "✅" if obj['class_id'] in selected_classes else "ℹ️"
-                            st.write(f"{status} **{obj['class']}** - Confidence: {obj['confidence']}")
-                    else:
-                        st.info("No objects detected in the image")
-                
-        except Exception as e:
-            st.error(f"❌ Analysis failed: {e}")
-
 def main():
     # SafetyEagle Header
     st.markdown('<h1 class="eagle-header">🦅 SafetyEagle AI</h1>', unsafe_allow_html=True)
@@ -392,14 +266,12 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🧭 Navigation")
     page = st.sidebar.radio("Go to", 
-        ["Class Selection", "Camera Setup", "Mobile Camera", "Settings", "Live Monitoring", "Dashboard", "Reports", "Deployment Guide"])
+        ["Class Selection", "Camera Setup", "Settings", "Live Monitoring", "Dashboard", "Reports", "Deployment Guide"])
     
     if page == "Class Selection":
         show_class_selection()
     elif page == "Camera Setup":
         show_camera_setup()
-    elif page == "Mobile Camera":
-        show_mobile_camera()
     elif page == "Settings":
         show_settings()
     elif page == "Live Monitoring":
@@ -410,74 +282,6 @@ def main():
         show_reports()
     elif page == "Deployment Guide":
         show_deployment_guide()
-
-def show_mobile_camera():
-    st.markdown('<h2 class="section-header">📱 Mobile Camera Safety Check</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.model_loaded:
-        st.error("❌ Please wait for model initialization on the Class Selection page first.")
-        return
-    
-    if not st.session_state.selected_ppe:
-        st.warning("⚠️ Please select classes to monitor first on the Class Selection page!")
-        return
-    
-    st.info("""
-    **📱 Mobile Usage Instructions:**
-    1. Allow camera permissions when prompted by your browser
-    2. Point your camera at the person/area to analyze
-    3. Take a photo using the camera button below
-    4. SafetyEagle AI will instantly analyze for compliance
-    """)
-    
-    # Mobile camera input
-    st.subheader("📸 Take Photo with Mobile Camera")
-    
-    picture = st.camera_input(
-        "Point your camera and take a photo for safety analysis",
-        key="mobile_camera",
-        help="On mobile devices, this will use your phone's camera"
-    )
-    
-    if picture is not None:
-        st.session_state.mobile_camera_active = True
-        
-        # Process the camera image
-        image = process_mobile_camera_image(picture)
-        if image is not None:
-            analyze_single_image(image, "Mobile Camera")
-    
-    # Alternative: File upload for mobile
-    st.subheader("📁 Or Upload Existing Photo")
-    
-    uploaded_file = st.file_uploader(
-        "Upload a photo from your device",
-        type=['jpg', 'jpeg', 'png'],
-        help="Select an existing photo from your gallery or camera roll"
-    )
-    
-    if uploaded_file is not None:
-        # Process uploaded image
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        
-        if image is not None:
-            analyze_single_image(image, "Uploaded Image")
-        else:
-            st.error("❌ Failed to process uploaded image")
-    
-    # Quick actions
-    st.subheader("⚡ Quick Actions")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("🔄 New Safety Check", use_container_width=True):
-            st.session_state.mobile_camera_active = False
-            st.rerun()
-    
-    with col2:
-        if st.button("📊 View Dashboard", use_container_width=True):
-            st.switch_page("Dashboard")
 
 def show_class_selection():
     st.markdown('<h2 class="section-header">🎯 Select Detection Classes</h2>', unsafe_allow_html=True)
@@ -723,10 +527,10 @@ def show_live_monitoring():
     with col1:
         st.subheader("Monitoring Controls")
         
-        # Camera options - updated to include mobile camera
+        # Camera options - remove local webcam for cloud compatibility
         camera_mode = st.radio(
             "Select Input Source:",
-            ["IP Camera", "Mobile Camera", "Test Mode", "Upload Video"],
+            ["IP Camera", "Test Mode", "Upload Video"],
             help="Choose your video source"
         )
         
@@ -770,11 +574,6 @@ def show_live_monitoring():
                     st.rerun()
             else:
                 st.warning("Please enter an IP camera URL first")
-        
-        elif camera_mode == "Mobile Camera":
-            st.info("📱 Switch to the 'Mobile Camera' tab for direct mobile camera analysis")
-            if st.button("📱 Go to Mobile Camera"):
-                st.switch_page("Mobile Camera")
                 
         elif camera_mode == "Test Mode":
             if st.button("🧪 Start Test Mode", type="primary"):
@@ -1250,7 +1049,6 @@ def show_deployment_guide():
         **✅ Current Features:**
         - Class selection from YOLO model
         - IP camera integration
-        - **Mobile camera support** 📱
         - Video file analysis
         - Safety violation tracking
         - Professional reporting
@@ -1271,32 +1069,42 @@ def show_deployment_guide():
         st.markdown("""
         **📊 Available Now:**
         - Real-time monitoring
-        - Mobile safety checks
         - Safety dashboards
         - Compliance reports
         - Multi-class detection
         - Professional UI/UX
         """)
     
-    st.subheader("🎯 Mobile Camera Features")
+    st.subheader("🎯 Next Steps for Enhanced Deployment")
     
     st.markdown("""
-    **📱 New Mobile Camera Integration:**
+    **For Full Production Deployment:**
     
-    - **Direct Camera Access**: Use your phone's camera for instant safety checks
-    - **Photo Analysis**: Take photos and get immediate safety compliance results
-    - **Upload Existing Photos**: Analyze photos from your gallery
-    - **Mobile-Optimized UI**: Responsive design for all screen sizes
-    - **Instant Violation Alerts**: Get immediate feedback on safety compliance
+    1. **Custom Model Upload:**
+       ```python
+       # Upload your trained model to:
+       models/best.pt
+       ```
     
-    **Usage:**
-    1. Go to "Mobile Camera" tab
-    2. Allow camera permissions
-    3. Take a photo or upload existing
-    4. Get instant safety analysis
+    2. **Enhanced Requirements:**
+       ```txt
+       # In requirements.txt
+       opencv-python-headless==4.8.1.78
+       ultralytics==8.0.186
+       torch==2.0.1
+       ```
+    
+    3. **Streamlit Configuration:**
+       ```toml
+       # In .streamlit/config.toml
+       [server]
+       headless = true
+       address = "0.0.0.0"
+       port = 8501
+       ```
     """)
     
-    st.success("🎉 **SafetyEagle AI with Mobile Camera is now successfully deployed and operational!**")
+    st.success("🎉 **SafetyEagle AI is now successfully deployed and operational!**")
 
 if __name__ == "__main__":
     main()
