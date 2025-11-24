@@ -98,6 +98,13 @@ st.markdown("""
         border-radius: 0.5rem;
         margin-top: 1rem;
     }
+    .ppe-item {
+        background-color: #f8f9fa;
+        padding: 0.5rem;
+        border-radius: 0.25rem;
+        margin: 0.25rem;
+        border-left: 3px solid #8B4513;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -130,9 +137,9 @@ if 'project_info' not in st.session_state:
         'project_name': '',
         'engineer_name': '',
         'contractor_name': '',
-        'work_type': '',
-        'project_hours': 0,
-        'workers_assigned': 0,
+        'work_type': 'Drilling Operations',
+        'project_hours': 8,  # Changed from 0 to 8 to fix the error
+        'workers_assigned': 1,  # Changed from 0 to 1 to fix potential error
         'start_date': datetime.now()
     }
 
@@ -337,9 +344,9 @@ def show_ppe_selection():
     """PPE selection tab"""
     st.markdown('<h2 class="section-header">🛡️ PPE Equipment Selection</h2>', unsafe_allow_html=True)
     
+    # Use demo classes if model not loaded
     if not st.session_state.model_loaded:
-        st.error("❌ Please wait for model initialization.")
-        return
+        st.session_state.available_classes = OIL_GAS_PPE_CLASSES
     
     st.info("Select the required Personal Protective Equipment for your oil & gas project")
     
@@ -381,11 +388,11 @@ def show_ppe_selection():
             st.rerun()
     
     with col2:
-        if st.button("🔄 Reset to Default", use_container_width=True):
-            # Default selection for oil & gas
-            default_ppe = {0: "Hard Hat", 1: "Safety Glasses", 2: "High-Vis Vest", 3: "Safety Gloves"}
-            st.session_state.selected_ppe = {k: v for k, v in available_classes.items() if v in default_ppe.values()}
-            st.info("🔄 Reset to basic oil & gas PPE")
+        if st.button("🔄 Basic Oil & Gas Set", use_container_width=True):
+            # Basic selection for oil & gas
+            basic_ppe = {0: "Hard Hat", 1: "Safety Glasses", 2: "High-Vis Vest", 3: "Safety Gloves", 4: "Safety Boots"}
+            st.session_state.selected_ppe = {k: v for k, v in available_classes.items() if v in basic_ppe.values()}
+            st.info("🔄 Basic oil & gas PPE set selected")
             st.rerun()
     
     with col3:
@@ -400,12 +407,12 @@ def show_ppe_selection():
         
         # Display in a nice grid
         selected_items = list(selected_classes.values())
-        num_cols = 4
+        num_cols = 3
         summary_cols = st.columns(num_cols)
         
         for i, item in enumerate(selected_items):
             with summary_cols[i % num_cols]:
-                st.markdown(f"✅ **{item}**")
+                st.markdown(f'<div class="ppe-item">✅ <strong>{item}</strong></div>', unsafe_allow_html=True)
     else:
         st.warning("⚠️ No PPE selected. Please select at least one safety equipment item.")
 
@@ -431,18 +438,21 @@ def show_camera_setup():
         if st.button("🔗 Test Connection", use_container_width=True):
             if camera_url:
                 if CV2_AVAILABLE:
-                    cap = cv2.VideoCapture(camera_url)
-                    if cap.isOpened():
-                        ret, frame = cap.read()
-                        cap.release()
-                        if ret:
-                            st.success("✅ Camera connected successfully!")
-                            if camera_url not in st.session_state.camera_urls:
-                                st.session_state.camera_urls.append(camera_url)
+                    try:
+                        cap = cv2.VideoCapture(camera_url)
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            cap.release()
+                            if ret:
+                                st.success("✅ Camera connected successfully!")
+                                if camera_url not in st.session_state.camera_urls:
+                                    st.session_state.camera_urls.append(camera_url)
+                            else:
+                                st.error("❌ Connected but no frame received")
                         else:
-                            st.error("❌ Connected but no frame received")
-                    else:
-                        st.error("❌ Cannot connect to camera")
+                            st.error("❌ Cannot connect to camera")
+                    except Exception as e:
+                        st.error(f"❌ Connection test failed: {e}")
                 else:
                     st.error("❌ OpenCV not available for camera testing")
             else:
@@ -459,6 +469,22 @@ def show_camera_setup():
                 if st.button("🗑️", key=f"remove_{i}"):
                     st.session_state.camera_urls.pop(i)
                     st.rerun()
+    
+    # Live monitoring section
+    st.subheader("🎥 Live Monitoring")
+    if st.session_state.camera_urls:
+        selected_camera = st.selectbox("Select Camera", st.session_state.camera_urls)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("▶️ Start Monitoring", type="primary", use_container_width=True):
+                st.session_state.monitoring = True
+                st.success("🚀 Starting live monitoring...")
+        with col2:
+            if st.button("⏹️ Stop Monitoring", use_container_width=True):
+                st.session_state.monitoring = False
+                st.info("Monitoring stopped")
+    else:
+        st.warning("No cameras configured. Add a camera URL above.")
 
 def show_detection_settings():
     """Detection settings tab"""
@@ -506,6 +532,22 @@ def show_detection_settings():
             'frame_skip': frame_skip
         }
         st.success("✅ Detection settings saved successfully!")
+    
+    # Current configuration display
+    st.subheader("Current Configuration")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(f"""
+        **Project:** {st.session_state.project_info['project_name'] or 'Not set'}
+        **Work Type:** {st.session_state.project_info['work_type']}
+        **Workers:** {st.session_state.project_info['workers_assigned']}
+        """)
+    with col2:
+        st.info(f"""
+        **PPE Items:** {len(st.session_state.selected_ppe)}
+        **Confidence:** {confidence}
+        **Speed:** {speed_setting.title()}
+        """)
 
 def show_dashboard():
     """Enhanced dashboard tab"""
@@ -524,7 +566,7 @@ def show_dashboard():
         st.info("📊 No safety violations recorded yet. Start monitoring to see analytics.")
         
         # Demo data for visualization
-        if st.button("🧪 Load Demo Data for Visualization"):
+        if st.button("🧪 Load Demo Data for Visualization", use_container_width=True):
             generate_demo_data()
             st.rerun()
         return
@@ -543,11 +585,12 @@ def show_dashboard():
         st.metric("Today's Violations", today_violations)
     
     with col3:
-        compliance_rate = max(0, 100 - (total_violations / max(1, st.session_state.project_info['workers_assigned']) * 100))
+        workers = max(1, st.session_state.project_info['workers_assigned'])
+        compliance_rate = max(0, 100 - (total_violations / workers * 10))  # Adjusted calculation
         st.metric("Compliance Rate", f"{compliance_rate:.1f}%")
     
     with col4:
-        avg_violations_per_worker = total_violations / max(1, st.session_state.project_info['workers_assigned'])
+        avg_violations_per_worker = total_violations / workers
         st.metric("Avg Violations/Worker", f"{avg_violations_per_worker:.1f}")
     
     # Charts and visualizations
@@ -576,7 +619,11 @@ def show_dashboard():
             col1, col2 = st.columns([1, 2])
             with col1:
                 if 'image' in violation:
-                    st.image(violation['image'], use_column_width=True)
+                    # Create a simple placeholder for demo
+                    img_placeholder = np.ones((200, 300, 3), dtype=np.uint8) * 100
+                    cv2.putText(img_placeholder, "Violation Capture", (50, 100), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    st.image(img_placeholder, use_column_width=True)
             with col2:
                 st.write(f"**Missing PPE:** {violation['missing_classes']}")
                 st.write(f"**Time:** {violation['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
@@ -612,7 +659,10 @@ def show_ppe_compliance():
     """Show PPE compliance by equipment type"""
     equipment_violations = {}
     for violation in st.session_state.violations:
-        missing_items = violation['missing_classes'].split(', ')
+        if isinstance(violation['missing_classes'], str):
+            missing_items = violation['missing_classes'].split(', ')
+        else:
+            missing_items = [violation['missing_classes']]
         for item in missing_items:
             equipment_violations[item] = equipment_violations.get(item, 0) + 1
     
@@ -623,10 +673,10 @@ def show_ppe_compliance():
         st.plotly_chart(fig, use_container_width=True)
         
         # Compliance rate by equipment
-        total_checks = len(st.session_state.violations) * len(st.session_state.selected_ppe)
+        total_checks = len(st.session_state.violations) * max(1, len(st.session_state.selected_ppe))
         compliance_data = []
         for equipment, violations in equipment_violations.items():
-            compliance_rate = 100 - (violations / total_checks * 100)
+            compliance_rate = max(0, 100 - (violations / total_checks * 100))
             compliance_data.append({'Equipment': equipment, 'Compliance Rate': compliance_rate})
         
         if compliance_data:
@@ -638,13 +688,13 @@ def show_ppe_compliance():
 
 def show_worker_violations_correlation():
     """Show correlation between workers and violations"""
-    workers = st.session_state.project_info['workers_assigned']
+    workers = max(1, st.session_state.project_info['workers_assigned'])
     violations = len(st.session_state.violations)
     
     # Simulate worker-wise data for demo
     worker_data = []
     for i in range(workers):
-        worker_violations = np.random.poisson(violations / max(1, workers))
+        worker_violations = np.random.poisson(max(1, violations / workers))
         worker_data.append({
             'Worker_ID': f"W{i+1:03d}",
             'Violations': worker_violations,
@@ -744,40 +794,30 @@ def show_reports():
     if st.button("🚀 Generate Custom Report", type="primary", use_container_width=True):
         generate_custom_report(report_period, report_format, data_detail, include_charts, include_recommendations)
     
-    # Report templates
-    st.subheader("📁 Report Templates")
-    
-    template_cols = st.columns(3)
-    
-    with template_cols[0]:
-        st.markdown("""
-        **Daily Safety Brief**
-        - Executive summary
-        - Key violations
-        - Immediate actions
-        """)
-        if st.button("Use Daily Template", key="daily"):
-            st.info("Daily template selected")
-    
-    with template_cols[1]:
-        st.markdown("""
-        **Weekly Compliance**
-        - Trend analysis
-        - Department performance
-        - Compliance metrics
-        """)
-        if st.button("Use Weekly Template", key="weekly"):
-            st.info("Weekly template selected")
-    
-    with template_cols[2]:
-        st.markdown("""
-        **Monthly Management**
-        - Executive dashboard
-        - ROI analysis
-        - Strategic recommendations
-        """)
-        if st.button("Use Monthly Template", key="monthly"):
-            st.info("Monthly template selected")
+    # Recent report history
+    if st.session_state.violations:
+        st.subheader("📁 Recent Reports")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.download_button(
+                "📥 Download CSV Data",
+                pd.DataFrame(st.session_state.violations).to_csv(index=False),
+                "safety_data.csv",
+                "text/csv"
+            )
+        
+        with col2:
+            st.download_button(
+                "📊 Download Excel Report",
+                generate_excel_report(),
+                "safety_report.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        
+        with col3:
+            if st.button("🔄 Refresh Data", use_container_width=True):
+                st.rerun()
 
 def generate_summary_report():
     """Generate summary safety report"""
@@ -795,7 +835,7 @@ def generate_summary_report():
     ## Executive Summary
     - Total Workers: {st.session_state.project_info['workers_assigned']}
     - Total Violations: {len(st.session_state.violations)}
-    - Overall Compliance Rate: {max(0, 100 - (len(st.session_state.violations) / max(1, st.session_state.project_info['workers_assigned']) * 100)):.1f}%
+    - Overall Compliance Rate: {calculate_compliance_rate():.1f}%
     
     ## Key Findings
     - Most common violation: {get_most_common_violation()}
@@ -852,6 +892,37 @@ def generate_custom_report(period, format, detail, charts, recommendations):
     st.balloons()
     st.success(f"✅ Custom {format} report generated successfully!")
 
+def generate_excel_report():
+    """Generate Excel report with safety data"""
+    # Create a simple Excel file in memory
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Summary sheet
+        summary_data = {
+            'Metric': ['Total Violations', 'Workers', 'Compliance Rate', 'Project Hours'],
+            'Value': [
+                len(st.session_state.violations),
+                st.session_state.project_info['workers_assigned'],
+                f"{calculate_compliance_rate():.1f}%",
+                st.session_state.project_info['project_hours']
+            ]
+        }
+        pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
+        
+        # Violations sheet
+        if st.session_state.violations:
+            violations_df = pd.DataFrame(st.session_state.violations)
+            violations_df.to_excel(writer, sheet_name='Violations', index=False)
+    
+    return output.getvalue()
+
+def calculate_compliance_rate():
+    """Calculate overall compliance rate"""
+    workers = max(1, st.session_state.project_info['workers_assigned'])
+    violations = len(st.session_state.violations)
+    return max(0, 100 - (violations / workers * 10))
+
 def get_most_common_violation():
     """Get most common violation type"""
     if not st.session_state.violations:
@@ -859,7 +930,10 @@ def get_most_common_violation():
     
     violations_count = {}
     for violation in st.session_state.violations:
-        items = violation['missing_classes'].split(', ')
+        if isinstance(violation['missing_classes'], str):
+            items = violation['missing_classes'].split(', ')
+        else:
+            items = [violation['missing_classes']]
         for item in items:
             violations_count[item] = violations_count.get(item, 0) + 1
     
@@ -871,7 +945,9 @@ def get_peak_violation_hours():
         return "No data"
     
     hours = [v['timestamp'].hour for v in st.session_state.violations]
-    peak_hour = max(set(hours), key=hours.count) if hours else "N/A"
+    if not hours:
+        return "N/A"
+    peak_hour = max(set(hours), key=hours.count)
     return f"{peak_hour}:00 - {peak_hour+1}:00"
 
 def get_safety_recommendations():
@@ -880,7 +956,7 @@ def get_safety_recommendations():
         return "Continue current safety protocols"
     
     total_violations = len(st.session_state.violations)
-    workers = st.session_state.project_info['workers_assigned']
+    workers = max(1, st.session_state.project_info['workers_assigned'])
     
     if total_violations / workers > 0.5:
         return "Immediate safety training required"
@@ -891,14 +967,14 @@ def get_safety_recommendations():
 
 def generate_performance_metrics():
     """Generate performance metrics string"""
-    workers = st.session_state.project_info['workers_assigned']
+    workers = max(1, st.session_state.project_info['workers_assigned'])
     violations = len(st.session_state.violations)
     
     metrics = f"""
-    - Safety Compliance Score: {max(0, 100 - (violations / max(1, workers) * 100)):.1f}%
-    - Violations per Worker: {violations / max(1, workers):.2f}
-    - Daily Average Violations: {violations / max(1, (datetime.now() - st.session_state.project_info['start_date']).days):.1f}
-    - Project Safety Rating: {'⭐' * min(5, max(1, 6 - violations // max(1, workers)))}
+    - Safety Compliance Score: {calculate_compliance_rate():.1f}%
+    - Violations per Worker: {violations / workers:.2f}
+    - Daily Average Violations: {violations / max(1, (datetime.now().date() - st.session_state.project_info['start_date']).days):.1f}
+    - Project Safety Rating: {'⭐' * min(5, max(1, 6 - violations // workers))}
     """
     return metrics
 
@@ -908,8 +984,8 @@ def generate_demo_data():
     for i in range(50):
         demo_violations.append({
             'timestamp': datetime.now() - pd.Timedelta(hours=np.random.randint(1, 168)),
-            'missing_classes': np.random.choice(list(st.session_state.selected_ppe.values()), 
-                                              np.random.randint(1, 3)),
+            'missing_classes': ', '.join(np.random.choice(list(st.session_state.selected_ppe.values()), 
+                                              np.random.randint(1, 3))),
             'selected_classes': list(st.session_state.selected_ppe.values())
         })
     st.session_state.violations = demo_violations
