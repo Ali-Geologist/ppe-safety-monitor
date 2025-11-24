@@ -1,4 +1,12 @@
 import streamlit as st
+try:
+    import cv2
+except ImportError:
+    st.error("OpenCV not installed properly")
+import pandas as pd
+import numpy as np
+from ultralytics import YOLO
+import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -1108,3 +1116,4 @@ def show_deployment_guide():
 
 if __name__ == "__main__":
     main()
+
