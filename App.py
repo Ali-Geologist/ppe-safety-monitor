@@ -12,6 +12,7 @@ import numpy as np
 from datetime import datetime
 import time
 import os
+os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
 from pathlib import Path
 import tempfile
 from PIL import Image
@@ -1116,4 +1117,5 @@ def show_deployment_guide():
 
 if __name__ == "__main__":
     main()
+
 
