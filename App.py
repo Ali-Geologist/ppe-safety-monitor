@@ -41,7 +41,7 @@ if 'classes_available' not in st.session_state:
 def load_model():
     """Load YOLO model with error handling"""
     try:
-        model = YOLO('model.pt')
+        model = YOLO('best.pt')
         
         # Check if model has classes
         if hasattr(model, 'names') and model.names:
@@ -272,3 +272,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
