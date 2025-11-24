@@ -37,73 +37,219 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Oil & Gas SafetyEagle branding
+# Dark Theme CSS for Oil & Gas SafetyEagle branding
 st.markdown("""
 <style>
+    /* Main dark theme */
+    .main {
+        background-color: #0E1117;
+        color: #FAFAFA;
+    }
+    
+    .stApp {
+        background: linear-gradient(135deg, #0c0f15 0%, #1a1d25 100%);
+    }
+    
+    /* Headers */
     .eagle-header {
-        font-size: 2.8rem;
-        color: #8B4513;
-        background: linear-gradient(135deg, #8B4513 0%, #FF6700 100%);
+        font-size: 3rem;
+        background: linear-gradient(135deg, #FF6B35 0%, #FF8E53 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         text-align: center;
-        font-weight: 700;
+        font-weight: 800;
         margin-bottom: 0.5rem;
         font-family: 'Montserrat', sans-serif;
+        text-shadow: 0 2px 10px rgba(255, 107, 53, 0.3);
     }
+    
     .eagle-tagline {
         text-align: center;
-        color: #2F4F4F;
-        font-size: 1.2rem;
+        color: #94A3B8;
+        font-size: 1.3rem;
         font-style: italic;
         margin-bottom: 2rem;
+        font-weight: 300;
     }
-    .metric-card {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #8B4513;
-        margin-bottom: 1rem;
-    }
-    .warning-card {
-        background-color: #fff3cd;
-        border-left: 4px solid #ffc107;
-        padding: 1rem;
-        border-radius: 0.5rem;
-    }
-    .success-card {
-        background-color: #d1edff;
-        border-left: 4px solid #28a745;
-        padding: 1rem;
-        border-radius: 0.5rem;
-    }
+    
     .section-header {
-        font-size: 1.5rem;
-        color: #8B4513;
-        border-bottom: 2px solid #8B4513;
+        font-size: 1.8rem;
+        color: #FF6B35;
+        border-bottom: 3px solid #FF6B35;
         padding-bottom: 0.5rem;
-        margin-top: 1.5rem;
-        margin-bottom: 1rem;
+        margin-top: 2rem;
+        margin-bottom: 1.5rem;
+        font-weight: 700;
+        text-shadow: 0 2px 4px rgba(255, 107, 53, 0.2);
     }
-    .project-info-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
+    
+    /* Cards and containers */
+    .metric-card {
+        background: linear-gradient(135deg, #1E293B 0%, #334155 100%);
         padding: 1.5rem;
-        border-radius: 0.5rem;
+        border-radius: 12px;
+        border-left: 5px solid #FF6B35;
         margin-bottom: 1rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        border: 1px solid #334155;
     }
+    
+    .warning-card {
+        background: linear-gradient(135deg, #451a03 0%, #7c2d12 100%);
+        border-left: 5px solid #F59E0B;
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        border: 1px solid #7c2d12;
+    }
+    
+    .success-card {
+        background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+        border-left: 5px solid #10B981;
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        border: 1px solid #047857;
+    }
+    
+    .project-info-card {
+        background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 2rem;
+        box-shadow: 0 8px 25px rgba(124, 58, 237, 0.3);
+        border: 1px solid #A78BFA;
+    }
+    
     .tab-container {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-top: 1rem;
+        background: linear-gradient(135deg, #1E293B 0%, #334155 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        margin-top: 1.5rem;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        border: 1px solid #334155;
     }
+    
     .ppe-item {
-        background-color: #f8f9fa;
-        padding: 0.5rem;
-        border-radius: 0.25rem;
-        margin: 0.25rem;
-        border-left: 3px solid #8B4513;
+        background: linear-gradient(135deg, #1E293B 0%, #2D3748 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 0.5rem;
+        border-left: 4px solid #FF6B35;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        border: 1px solid #2D3748;
+    }
+    
+    /* Custom streamlit components */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        height: 60px;
+        white-space: pre-wrap;
+        background-color: #1E293B;
+        border-radius: 8px 8px 0px 0px;
+        gap: 8px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        font-weight: 600;
+        border: 1px solid #334155;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #FF6B35 !important;
+        color: white !important;
+    }
+    
+    /* Sidebar styling */
+    .css-1d391kg, .css-1lcbmhc {
+        background-color: #0F172A !important;
+    }
+    
+    /* Input fields */
+    .stTextInput>div>div>input, .stNumberInput>div>div>input, .stSelectbox>div>div>select {
+        background-color: #1E293B !important;
+        color: #FAFAFA !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+    }
+    
+    .stSlider>div>div>div>div {
+        background-color: #FF6B35 !important;
+    }
+    
+    /* Buttons */
+    .stButton>button {
+        background: linear-gradient(135deg, #FF6B35 0%, #FF8E53 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+        box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3) !important;
+    }
+    
+    .stButton>button:hover {
+        background: linear-gradient(135deg, #FF8E53 0%, #FF6B35 100%) !important;
+        box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4) !important;
+        transform: translateY(-1px);
+    }
+    
+    /* Dataframes and tables */
+    .dataframe {
+        background-color: #1E293B !important;
+        color: #FAFAFA !important;
+    }
+    
+    /* Expanders */
+    .streamlit-expanderHeader {
+        background-color: #1E293B !important;
+        color: #FAFAFA !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+    }
+    
+    /* Plotly chart background */
+    .js-plotly-plot .plotly, .modebar {
+        background-color: #1E293B !important;
+    }
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #1E293B;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #FF6B35;
+        border-radius: 4px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: #FF8E53;
+    }
+    
+    /* Status indicators */
+    .status-active {
+        color: #10B981;
+        font-weight: 700;
+    }
+    
+    .status-inactive {
+        color: #EF4444;
+        font-weight: 700;
+    }
+    
+    /* Code blocks */
+    .stCodeBlock {
+        background-color: #1E293B !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -140,24 +286,24 @@ def initialize_session_state():
             'engineer_name': 'John Safety Officer',
             'contractor_name': 'XYZ Contracting Ltd',
             'work_type': 'Drilling Operations',
-            'project_hours': 240,  # Safe default value
-            'workers_assigned': 12,  # Safe default value
+            'project_hours': 240,
+            'workers_assigned': 12,
             'start_date': datetime.now()
         }
 
 # Standard Oil & Gas PPE classes
 OIL_GAS_PPE_CLASSES = {
-    0: "Hard Hat",
-    1: "Safety Glasses",
-    2: "High-Vis Vest",
-    3: "Safety Gloves",
-    4: "Safety Boots",
-    5: "Hearing Protection",
-    6: "Face Shield",
-    7: "Respirator",
-    8: "Fire Retardant Clothing",
-    9: "Harness",
-    10: "Gas Monitor"
+    0: "🛡️ Hard Hat",
+    1: "👓 Safety Glasses", 
+    2: "🦺 High-Vis Vest",
+    3: "🧤 Safety Gloves",
+    4: "👢 Safety Boots",
+    5: "🎧 Hearing Protection",
+    6: "🥽 Face Shield",
+    7: "😷 Respirator",
+    8: "🔥 Fire Retardant Clothing",
+    9: "🪢 Harness",
+    10: "📊 Gas Monitor"
 }
 
 def load_model_and_classes():
@@ -213,7 +359,7 @@ def load_model_and_classes():
 
 def initialize_app():
     """Initialize the app and load model on startup"""
-    initialize_session_state()  # Ensure session state is properly initialized
+    initialize_session_state()
     
     if not st.session_state.model_loaded:
         with st.spinner("🦅 Initializing SafetyEagle AI System for Oil & Gas Safety..."):
@@ -230,35 +376,53 @@ def main():
     # Initialize app on startup
     initialize_app()
     
-    # Show system status in sidebar
+    # Show system status in sidebar with dark theme
     st.sidebar.markdown("### 🦅 SafetyEagle Status")
     st.sidebar.markdown("---")
     
     # Display project info if available
     if st.session_state.project_info['project_name']:
         st.sidebar.markdown("### 📋 Project Info")
-        st.sidebar.write(f"**Project:** {st.session_state.project_info['project_name']}")
-        st.sidebar.write(f"**Company:** {st.session_state.project_info['company_name']}")
-        st.sidebar.write(f"**Engineer:** {st.session_state.project_info['engineer_name']}")
+        st.sidebar.markdown(f"**Project:** {st.session_state.project_info['project_name']}")
+        st.sidebar.markdown(f"**Company:** {st.session_state.project_info['company_name']}")
+        st.sidebar.markdown(f"**Engineer:** {st.session_state.project_info['engineer_name']}")
         st.sidebar.markdown("---")
     
-    if not CV2_AVAILABLE:
-        st.sidebar.error("❌ OpenCV Not Available")
-        st.sidebar.info("Using limited functionality mode")
-    
-    if not YOLO_AVAILABLE:
-        st.sidebar.error("❌ YOLO Not Available")
-        st.sidebar.info("Using demo simulation mode")
+    # System status with colored indicators
+    status_col1, status_col2 = st.sidebar.columns(2)
+    with status_col1:
+        if CV2_AVAILABLE:
+            st.markdown('<p class="status-active">✅ OpenCV</p>', unsafe_allow_html=True)
+        else:
+            st.markdown('<p class="status-inactive">❌ OpenCV</p>', unsafe_allow_html=True)
+            
+    with status_col2:
+        if YOLO_AVAILABLE:
+            st.markdown('<p class="status-active">✅ YOLO</p>', unsafe_allow_html=True)
+        else:
+            st.markdown('<p class="status-inactive">❌ YOLO</p>', unsafe_allow_html=True)
     
     if st.session_state.model_loaded and st.session_state.available_classes:
         if st.session_state.demo_mode:
-            st.sidebar.warning("🟡 Demo Mode Active")
+            st.sidebar.markdown('<div class="warning-card">🟡 Demo Mode Active</div>', unsafe_allow_html=True)
         else:
-            st.sidebar.success("✅ Model Loaded")
+            st.sidebar.markdown('<div class="success-card">✅ Model Loaded</div>', unsafe_allow_html=True)
         st.sidebar.info(f"**Available Classes:** {len(st.session_state.available_classes)}")
     else:
-        st.sidebar.error("❌ Model Not Loaded")
+        st.sidebar.markdown('<div class="warning-card">❌ Model Not Loaded</div>', unsafe_allow_html=True)
         st.sidebar.info("Using simulation mode")
+    
+    # Quick actions in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚡ Quick Actions")
+    if st.sidebar.button("🔄 Reset App", use_container_width=True):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
+    
+    if st.sidebar.button("📊 Demo Data", use_container_width=True):
+        generate_demo_data()
+        st.sidebar.success("Demo data loaded!")
     
     # Main tabs for workflow
     tabs = st.tabs([
@@ -287,6 +451,7 @@ def show_project_setup():
     """Project setup tab"""
     st.markdown('<h2 class="section-header">🏢 Project Setup</h2>', unsafe_allow_html=True)
     
+    st.markdown('<div class="tab-container">', unsafe_allow_html=True)
     st.info("Configure your oil & gas project details for comprehensive safety monitoring")
     
     col1, col2 = st.columns(2)
@@ -307,12 +472,11 @@ def show_project_setup():
             index=0
         )
         
-        # Safe number inputs with validation
         project_hours = st.number_input(
             "Project Duration (hours)", 
             min_value=1, 
             max_value=10000,
-            value=max(1, st.session_state.project_info['project_hours']),  # Ensure value is at least 1
+            value=max(1, st.session_state.project_info['project_hours']),
             step=1
         )
         
@@ -320,7 +484,7 @@ def show_project_setup():
             "Number of Workers Assigned", 
             min_value=1, 
             max_value=500,
-            value=max(1, st.session_state.project_info['workers_assigned']),  # Ensure value is at least 1
+            value=max(1, st.session_state.project_info['workers_assigned']),
             step=1
         )
         
@@ -357,10 +521,13 @@ def show_project_setup():
             **Workers:** {workers_assigned}  
             **Start Date:** {start_date}
             """)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def show_ppe_selection():
     """PPE selection tab"""
     st.markdown('<h2 class="section-header">🛡️ PPE Equipment Selection</h2>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="tab-container">', unsafe_allow_html=True)
     
     # Use demo classes if model not loaded
     if not st.session_state.model_loaded or not st.session_state.available_classes:
@@ -372,7 +539,7 @@ def show_ppe_selection():
     # Display available PPE classes
     available_classes = st.session_state.available_classes
     
-    st.subheader("Available Safety Equipment")
+    st.subheader("🛠️ Available Safety Equipment")
     
     # Create columns for better organization
     num_columns = 3
@@ -410,7 +577,7 @@ def show_ppe_selection():
         with col2:
             if st.button("🔄 Basic Oil & Gas Set", use_container_width=True):
                 # Basic selection for oil & gas
-                basic_ppe = {0: "Hard Hat", 1: "Safety Glasses", 2: "High-Vis Vest", 3: "Safety Gloves", 4: "Safety Boots"}
+                basic_ppe = {0: "🛡️ Hard Hat", 1: "👓 Safety Glasses", 2: "🦺 High-Vis Vest", 3: "🧤 Safety Gloves", 4: "👢 Safety Boots"}
                 st.session_state.selected_ppe = {k: v for k, v in available_classes.items() if v in basic_ppe.values()}
                 st.info("🔄 Basic oil & gas PPE set selected")
                 st.rerun()
@@ -422,7 +589,7 @@ def show_ppe_selection():
         
         # Show current selection
         if selected_classes:
-            st.subheader("Current PPE Selection")
+            st.subheader("🎯 Current PPE Selection")
             st.info(f"**Selected {len(selected_classes)} out of {len(available_classes)} PPE items:**")
             
             # Display in a nice grid
@@ -437,17 +604,19 @@ def show_ppe_selection():
             st.warning("⚠️ No PPE selected. Please select at least one safety equipment item.")
     else:
         st.error("❌ No PPE classes available. Please check model initialization.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def show_camera_setup():
     """Camera setup tab"""
     st.markdown('<h2 class="section-header">📷 Camera Configuration</h2>', unsafe_allow_html=True)
     
+    st.markdown('<div class="tab-container">', unsafe_allow_html=True)
     st.info("Configure camera sources for real-time safety monitoring")
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("IP Camera Setup")
+        st.subheader("🌐 IP Camera Setup")
         camera_url = st.text_input(
             "IP Camera URL:",
             placeholder="rtsp://username:password@ip:port/stream or http://ip:port/video",
@@ -507,17 +676,19 @@ def show_camera_setup():
                 st.info("Monitoring stopped")
     else:
         st.warning("No cameras configured. Add a camera URL above.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def show_detection_settings():
     """Detection settings tab"""
     st.markdown('<h2 class="section-header">⚙️ Detection Settings</h2>', unsafe_allow_html=True)
     
+    st.markdown('<div class="tab-container">', unsafe_allow_html=True)
     st.info("Configure AI detection parameters for optimal safety monitoring")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.subheader("Detection Sensitivity")
+        st.subheader("🎯 Detection Sensitivity")
         confidence = st.slider(
             "Confidence Threshold",
             min_value=0.1,
@@ -528,7 +699,7 @@ def show_detection_settings():
         )
     
     with col2:
-        st.subheader("Processing Speed")
+        st.subheader("⚡ Processing Speed")
         speed_setting = st.selectbox(
             "Detection Speed",
             options=["fast", "medium", "accurate"],
@@ -537,7 +708,7 @@ def show_detection_settings():
         )
     
     with col3:
-        st.subheader("Frame Processing")
+        st.subheader("📊 Frame Processing")
         frame_skip = st.slider(
             "Frame Skip Rate",
             min_value=1,
@@ -556,20 +727,27 @@ def show_detection_settings():
         st.success("✅ Detection settings saved successfully!")
     
     # Current configuration display
-    st.subheader("Current Configuration")
+    st.subheader("🔧 Current Configuration")
     col1, col2 = st.columns(2)
     with col1:
-        st.info(f"""
-        **Project:** {st.session_state.project_info['project_name'] or 'Not set'}
-        **Work Type:** {st.session_state.project_info['work_type']}
-        **Workers:** {st.session_state.project_info['workers_assigned']}
-        """)
+        st.markdown(f"""
+        <div class="metric-card">
+            <h4>🏢 Project Info</h4>
+            <p><strong>Project:</strong> {st.session_state.project_info['project_name'] or 'Not set'}</p>
+            <p><strong>Work Type:</strong> {st.session_state.project_info['work_type']}</p>
+            <p><strong>Workers:</strong> {st.session_state.project_info['workers_assigned']}</p>
+        </div>
+        """, unsafe_allow_html=True)
     with col2:
-        st.info(f"""
-        **PPE Items:** {len(st.session_state.selected_ppe)}
-        **Confidence:** {confidence}
-        **Speed:** {speed_setting.title()}
-        """)
+        st.markdown(f"""
+        <div class="metric-card">
+            <h4>🛡️ Safety Setup</h4>
+            <p><strong>PPE Items:</strong> {len(st.session_state.selected_ppe)}</p>
+            <p><strong>Confidence:</strong> {confidence}</p>
+            <p><strong>Speed:</strong> {speed_setting.title()}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def show_dashboard():
     """Enhanced dashboard tab"""
@@ -584,6 +762,8 @@ def show_dashboard():
         </div>
         """, unsafe_allow_html=True)
     
+    st.markdown('<div class="tab-container">', unsafe_allow_html=True)
+    
     if not st.session_state.violations:
         st.info("📊 No safety violations recorded yet. Start monitoring to see analytics.")
         
@@ -591,6 +771,7 @@ def show_dashboard():
         if st.button("🧪 Load Demo Data for Visualization", use_container_width=True):
             generate_demo_data()
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
         return
     
     # Key metrics
@@ -599,21 +780,21 @@ def show_dashboard():
     
     with col1:
         total_violations = len(st.session_state.violations)
-        st.metric("Total Violations", total_violations)
+        st.markdown(f'<div class="metric-card"><h3>{total_violations}</h3><p>Total Violations</p></div>', unsafe_allow_html=True)
     
     with col2:
         today_violations = len([v for v in st.session_state.violations 
                               if v['timestamp'].date() == datetime.now().date()])
-        st.metric("Today's Violations", today_violations)
+        st.markdown(f'<div class="metric-card"><h3>{today_violations}</h3><p>Today\'s Violations</p></div>', unsafe_allow_html=True)
     
     with col3:
         workers = max(1, st.session_state.project_info['workers_assigned'])
-        compliance_rate = max(0, 100 - (total_violations / workers * 10))  # Adjusted calculation
-        st.metric("Compliance Rate", f"{compliance_rate:.1f}%")
+        compliance_rate = max(0, 100 - (total_violations / workers * 10))
+        st.markdown(f'<div class="metric-card"><h3>{compliance_rate:.1f}%</h3><p>Compliance Rate</p></div>', unsafe_allow_html=True)
     
     with col4:
         avg_violations_per_worker = total_violations / workers
-        st.metric("Avg Violations/Worker", f"{avg_violations_per_worker:.1f}")
+        st.markdown(f'<div class="metric-card"><h3>{avg_violations_per_worker:.1f}</h3><p>Avg Violations/Worker</p></div>', unsafe_allow_html=True)
     
     # Charts and visualizations
     st.subheader("📊 Safety Analytics")
@@ -649,9 +830,10 @@ def show_dashboard():
                 st.write(f"**Missing PPE:** {violation['missing_classes']}")
                 st.write(f"**Time:** {violation['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
                 st.write(f"**Work Type:** {st.session_state.project_info['work_type']}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def show_violations_over_time():
-    """Show violations over time chart"""
+    """Show violations over time chart with dark theme"""
     df = pd.DataFrame([
         {
             'timestamp': v['timestamp'],
@@ -667,6 +849,12 @@ def show_violations_over_time():
         fig = px.line(daily_data, x='date', y='violations', 
                      title="Safety Violations Trend - Daily",
                      markers=True)
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white',
+            title_font_color='white'
+        )
         st.plotly_chart(fig, use_container_width=True)
         
         # Hourly distribution
@@ -674,10 +862,16 @@ def show_violations_over_time():
         fig2 = px.bar(hourly_data, x='hour', y='violations',
                      title="Violations by Hour of Day",
                      color='violations')
+        fig2.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white',
+            title_font_color='white'
+        )
         st.plotly_chart(fig2, use_container_width=True)
 
 def show_ppe_compliance():
-    """Show PPE compliance by equipment type"""
+    """Show PPE compliance by equipment type with dark theme"""
     equipment_violations = {}
     for violation in st.session_state.violations:
         if isinstance(violation['missing_classes'], str):
@@ -691,24 +885,16 @@ def show_ppe_compliance():
         fig = px.pie(values=list(equipment_violations.values()), 
                     names=list(equipment_violations.keys()),
                     title="PPE Violations Distribution")
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='white',
+            title_font_color='white'
+        )
         st.plotly_chart(fig, use_container_width=True)
-        
-        # Compliance rate by equipment
-        total_checks = len(st.session_state.violations) * max(1, len(st.session_state.selected_ppe))
-        compliance_data = []
-        for equipment, violations in equipment_violations.items():
-            compliance_rate = max(0, 100 - (violations / total_checks * 100))
-            compliance_data.append({'Equipment': equipment, 'Compliance Rate': compliance_rate})
-        
-        if compliance_data:
-            df_compliance = pd.DataFrame(compliance_data)
-            fig2 = px.bar(df_compliance, x='Equipment', y='Compliance Rate',
-                         title="PPE Compliance Rate by Equipment",
-                         color='Compliance Rate')
-            st.plotly_chart(fig2, use_container_width=True)
 
 def show_worker_violations_correlation():
-    """Show correlation between workers and violations"""
+    """Show correlation between workers and violations with dark theme"""
     workers = max(1, st.session_state.project_info['workers_assigned'])
     violations = len(st.session_state.violations)
     
@@ -727,17 +913,16 @@ def show_worker_violations_correlation():
     fig = px.scatter(df_workers, x='Worker_ID', y='Violations', color='Department',
                     title="Worker Safety Performance",
                     size='Violations', hover_data=['Department'])
+    fig.update_layout(
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font_color='white',
+        title_font_color='white'
+    )
     st.plotly_chart(fig, use_container_width=True)
-    
-    # Department-wise analysis
-    dept_data = df_workers.groupby('Department')['Violations'].mean().reset_index()
-    fig2 = px.bar(dept_data, x='Department', y='Violations',
-                 title="Average Violations by Department",
-                 color='Violations')
-    st.plotly_chart(fig2, use_container_width=True)
 
 def show_heatmap_analysis():
-    """Show heatmap analysis"""
+    """Show heatmap analysis with dark theme"""
     # Generate time-based heatmap data
     hours = list(range(24))
     days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -756,7 +941,11 @@ def show_heatmap_analysis():
     fig.update_layout(
         title="Safety Violations Heatmap (Time vs Day)",
         xaxis_title="Hour of Day",
-        yaxis_title="Day of Week"
+        yaxis_title="Day of Week",
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font_color='white',
+        title_font_color='white'
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -765,8 +954,11 @@ def show_reports():
     """Professional reports tab"""
     st.markdown('<h2 class="section-header">📈 Professional Safety Reports</h2>', unsafe_allow_html=True)
     
+    st.markdown('<div class="tab-container">', unsafe_allow_html=True)
+    
     if not st.session_state.project_info['project_name']:
         st.warning("⚠️ Please complete Project Setup first to generate professional reports.")
+        st.markdown('</div>', unsafe_allow_html=True)
         return
     
     st.info("Generate comprehensive safety reports for management and regulatory compliance")
@@ -839,6 +1031,10 @@ def show_reports():
         with col3:
             if st.button("🔄 Refresh Data", use_container_width=True):
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ... (Keep all the existing helper functions: generate_summary_report, generate_comprehensive_report, etc.)
+# The helper functions remain the same as in the previous version
 
 def generate_summary_report():
     """Generate summary safety report"""
