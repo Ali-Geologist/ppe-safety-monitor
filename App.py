@@ -183,15 +183,14 @@ def load_model_and_classes():
                 if os.path.exists(model_path):
                     model = YOLO(model_path)
                     loaded_path = model_path
-                    st.success(f"✅ Model loaded from: {model_path}")
+                    # Removed the success message that was displayed here
                     break
             except Exception as e:
-                st.warning(f"⚠️ Could not load from {model_path}: {e}")
+                # Silently continue without showing warnings
                 continue
         
         if model is None:
             # Fallback to standard PPE classes for demo
-            st.warning("⚠️ Local model not found. Using Oil & Gas PPE classes for demo...")
             available_classes = OIL_GAS_PPE_CLASSES
             st.session_state.demo_mode = True
             return None, available_classes, "demo"
@@ -203,12 +202,9 @@ def load_model_and_classes():
             st.session_state.model_loaded = True
             return model, available_classes, loaded_path
         else:
-            st.error("❌ Could not extract class names from model")
             return None, OIL_GAS_PPE_CLASSES, "demo"
             
     except Exception as e:
-        st.error(f"❌ Model loading failed: {e}")
-        st.info("🦅 Switching to SafetyEagle Demo Mode...")
         return None, OIL_GAS_PPE_CLASSES, "demo"
 
 def initialize_app():
@@ -250,12 +246,14 @@ def main():
         st.sidebar.error("❌ YOLO Not Available")
         st.sidebar.info("Using demo simulation mode")
     
+    # Removed the "Model Loaded" and "Available Classes" messages from here
     if st.session_state.model_loaded and st.session_state.available_classes:
         if st.session_state.demo_mode:
             st.sidebar.warning("🟡 Demo Mode Active")
         else:
-            st.sidebar.success("✅ Model Loaded")
-        st.sidebar.info(f"**Available Classes:** {len(st.session_state.available_classes)}")
+            # Removed the "✅ Model Loaded" message
+            pass
+        # Removed the "Available Classes" info message
     else:
         st.sidebar.error("❌ Model Not Loaded")
         st.sidebar.info("Using simulation mode")
@@ -1013,4 +1011,3 @@ def generate_demo_data():
 
 if __name__ == "__main__":
     main()
-
