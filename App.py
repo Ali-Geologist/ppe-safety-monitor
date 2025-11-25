@@ -135,13 +135,13 @@ def initialize_session_state():
         st.session_state.demo_mode = False
     if 'project_info' not in st.session_state:
         st.session_state.project_info = {
-            'company_name': 'ABC Oil & Gas Corp',
-            'project_name': 'North Field Drilling Project',
-            'engineer_name': 'John Safety Officer',
-            'contractor_name': 'XYZ Contracting Ltd',
-            'work_type': 'Drilling Operations',
-            'project_hours': 240,  # Safe default value
-            'workers_assigned': 12,  # Safe default value
+            'company_name': '',
+            'project_name': '',
+            'engineer_name': '',
+            'contractor_name': '',
+            'work_type': '',
+            'project_hours': 0,
+            'workers_assigned': 0,
             'start_date': datetime.now()
         }
 
@@ -183,7 +183,6 @@ def load_model_and_classes():
                 if os.path.exists(model_path):
                     model = YOLO(model_path)
                     loaded_path = model_path
-                    # Removed the success message that was displayed here
                     break
             except Exception as e:
                 # Silently continue without showing warnings
@@ -218,6 +217,22 @@ def initialize_app():
             st.session_state.available_classes = available_classes
             st.session_state.model_loaded = True
 
+def add_safety_violation(violation_data):
+    """Add a safety violation with integrity checks"""
+    required_fields = ['timestamp', 'missing_classes', 'confidence']
+    for field in required_fields:
+        if field not in violation_data:
+            st.error(f"❌ Safety violation missing required field: {field}")
+            return False
+    
+    # Validate timestamp (not in future)
+    if violation_data['timestamp'] > datetime.now():
+        st.error("❌ Violation timestamp cannot be in the future")
+        return False
+        
+    st.session_state.violations.append(violation_data)
+    return True
+
 def main():
     # SafetyEagle Header with Oil & Gas Theme
     st.markdown('<h1 class="eagle-header">🦅 SafetyEagle AI</h1>', unsafe_allow_html=True)
@@ -246,14 +261,9 @@ def main():
         st.sidebar.error("❌ YOLO Not Available")
         st.sidebar.info("Using demo simulation mode")
     
-    # Removed the "Model Loaded" and "Available Classes" messages from here
     if st.session_state.model_loaded and st.session_state.available_classes:
         if st.session_state.demo_mode:
             st.sidebar.warning("🟡 Demo Mode Active")
-        else:
-            # Removed the "✅ Model Loaded" message
-            pass
-        # Removed the "Available Classes" info message
     else:
         st.sidebar.error("❌ Model Not Loaded")
         st.sidebar.info("Using simulation mode")
@@ -300,7 +310,7 @@ def show_project_setup():
         st.subheader("🔧 Project Details")
         work_type = st.selectbox(
             "Type of Work",
-            ["Drilling Operations", "Well Maintenance", "Pipeline Construction", 
+            ["", "Drilling Operations", "Well Maintenance", "Pipeline Construction", 
              "Refinery Maintenance", "Offshore Operations", "Hazardous Area Work", "Other"],
             index=0
         )
@@ -308,29 +318,50 @@ def show_project_setup():
         # Safe number inputs with validation
         project_hours = st.number_input(
             "Project Duration (hours)", 
-            min_value=1, 
+            min_value=0, 
             max_value=10000,
-            value=max(1, st.session_state.project_info['project_hours']),  # Ensure value is at least 1
+            value=max(0, st.session_state.project_info['project_hours']),
             step=1
         )
         
         workers_assigned = st.number_input(
             "Number of Workers Assigned", 
-            min_value=1, 
+            min_value=0, 
             max_value=500,
-            value=max(1, st.session_state.project_info['workers_assigned']),  # Ensure value is at least 1
+            value=max(0, st.session_state.project_info['workers_assigned']),
             step=1
         )
         
         start_date = st.date_input("Project Start Date", value=st.session_state.project_info['start_date'])
     
-    # Save project information
+    # Save project information with validation
     if st.button("💾 Save Project Configuration", type="primary", use_container_width=True):
+        # Safety validation
+        if not company_name.strip():
+            st.error("❌ Company Name is required for safety compliance")
+            return
+            
+        if not project_name.strip():
+            st.error("❌ Project Name is required for safety compliance")
+            return
+            
+        if not work_type:
+            st.error("❌ Work Type is required for safety compliance")
+            return
+            
+        if workers_assigned <= 0:
+            st.error("❌ Number of workers must be greater than zero")
+            return
+            
+        if project_hours <= 0:
+            st.error("❌ Project duration must be greater than zero")
+            return
+        
         st.session_state.project_info = {
-            'company_name': company_name,
-            'project_name': project_name,
-            'engineer_name': engineer_name,
-            'contractor_name': contractor_name,
+            'company_name': company_name.strip(),
+            'project_name': project_name.strip(),
+            'engineer_name': engineer_name.strip(),
+            'contractor_name': contractor_name.strip(),
             'work_type': work_type,
             'project_hours': project_hours,
             'workers_assigned': workers_assigned,
@@ -416,15 +447,18 @@ def show_ppe_selection():
         with col3:
             if st.button("💾 Save PPE Selection", type="primary", use_container_width=True):
                 st.session_state.selected_ppe = selected_classes
-                st.success(f"✅ Saved {len(selected_classes)} PPE items for monitoring!")
+                if selected_classes:
+                    st.success(f"✅ Saved {len(selected_classes)} PPE items for monitoring!")
+                else:
+                    st.warning("⚠️ No PPE items selected")
         
         # Show current selection
-        if selected_classes:
+        if st.session_state.selected_ppe:
             st.subheader("Current PPE Selection")
-            st.info(f"**Selected {len(selected_classes)} out of {len(available_classes)} PPE items:**")
+            st.info(f"**Selected {len(st.session_state.selected_ppe)} out of {len(available_classes)} PPE items:**")
             
             # Display in a nice grid
-            selected_items = list(selected_classes.values())
+            selected_items = list(st.session_state.selected_ppe.values())
             num_cols = 3
             summary_cols = st.columns(num_cols)
             
@@ -506,8 +540,6 @@ def show_camera_setup():
     else:
         st.warning("No cameras configured. Add a camera URL above.")
 
-
-
 def show_live_feed(camera_url):
     """Show live camera feed"""
     try:
@@ -582,10 +614,14 @@ def show_detection_settings():
     st.subheader("Current Configuration")
     col1, col2 = st.columns(2)
     with col1:
+        project_name = st.session_state.project_info['project_name'] or 'Not set'
+        work_type = st.session_state.project_info['work_type'] or 'Not set'
+        workers = st.session_state.project_info['workers_assigned']
+        
         st.info(f"""
-        **Project:** {st.session_state.project_info['project_name'] or 'Not set'}
-        **Work Type:** {st.session_state.project_info['work_type']}
-        **Workers:** {st.session_state.project_info['workers_assigned']}
+        **Project:** {project_name}
+        **Work Type:** {work_type}
+        **Workers:** {workers}
         """)
     with col2:
         st.info(f"""
@@ -598,6 +634,15 @@ def show_dashboard():
     """Enhanced dashboard tab"""
     st.markdown('<h2 class="section-header">📊 Safety Dashboard</h2>', unsafe_allow_html=True)
     
+    # Project validation
+    if not st.session_state.project_info.get('project_name'):
+        st.error("❌ Please complete Project Setup before accessing the dashboard")
+        return
+        
+    if not st.session_state.selected_ppe:
+        st.warning("⚠️ Please configure PPE requirements in the PPE Selection tab")
+        return
+    
     # Project info header
     if st.session_state.project_info['project_name']:
         st.markdown(f"""
@@ -608,12 +653,7 @@ def show_dashboard():
         """, unsafe_allow_html=True)
     
     if not st.session_state.violations:
-        st.info("📊 No safety violations recorded yet. Start monitoring to see analytics.")
-        
-        # Demo data for visualization
-        if st.button("🧪 Load Demo Data for Visualization", use_container_width=True):
-            generate_demo_data()
-            st.rerun()
+        st.info("📊 No safety violations recorded. Start monitoring to see live analytics.")
         return
     
     # Key metrics
@@ -631,7 +671,7 @@ def show_dashboard():
     
     with col3:
         workers = max(1, st.session_state.project_info['workers_assigned'])
-        compliance_rate = max(0, 100 - (total_violations / workers * 10))  # Adjusted calculation
+        compliance_rate = max(0, 100 - (total_violations / workers * 10))
         st.metric("Compliance Rate", f"{compliance_rate:.1f}%")
     
     with col4:
@@ -735,7 +775,12 @@ def show_worker_violations_correlation():
     workers = max(1, st.session_state.project_info['workers_assigned'])
     violations = len(st.session_state.violations)
     
-    # Simulate worker-wise data for demo
+    # Use actual data when available, otherwise show message
+    if violations == 0:
+        st.info("No violation data available for worker correlation analysis")
+        return
+    
+    # Simulate worker-wise data for visualization (based on actual violations)
     worker_data = []
     for i in range(workers):
         worker_violations = np.random.poisson(max(1, violations / workers))
@@ -761,12 +806,21 @@ def show_worker_violations_correlation():
 
 def show_heatmap_analysis():
     """Show heatmap analysis"""
-    # Generate time-based heatmap data
+    # Use actual violation data for heatmap
+    if not st.session_state.violations:
+        st.info("No violation data available for heatmap analysis")
+        return
+    
+    # Generate time-based heatmap data from actual violations
     hours = list(range(24))
     days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     
-    # Simulate heatmap data for demo
-    heatmap_data = np.random.poisson(1, (7, 24))
+    # Create heatmap data from actual violations
+    heatmap_data = np.zeros((7, 24))
+    for violation in st.session_state.violations:
+        day_idx = violation['timestamp'].weekday()
+        hour_idx = violation['timestamp'].hour
+        heatmap_data[day_idx, hour_idx] += 1
     
     fig = go.Figure(data=go.Heatmap(
         z=heatmap_data,
@@ -1021,18 +1075,6 @@ def generate_performance_metrics():
     - Project Safety Rating: {'⭐' * min(5, max(1, 6 - violations // workers))}
     """
     return metrics
-
-def generate_demo_data():
-    """Generate demo data for visualization"""
-    demo_violations = []
-    for i in range(50):
-        demo_violations.append({
-            'timestamp': datetime.now() - pd.Timedelta(hours=np.random.randint(1, 168)),
-            'missing_classes': ', '.join(np.random.choice(list(st.session_state.selected_ppe.values()), 
-                                              np.random.randint(1, 3))),
-            'selected_classes': list(st.session_state.selected_ppe.values())
-        })
-    st.session_state.violations = demo_violations
 
 if __name__ == "__main__":
     main()
