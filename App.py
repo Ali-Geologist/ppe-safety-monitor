@@ -8,19 +8,7 @@ from pathlib import Path
 import tempfile
 from PIL import Image
 import io
-import requests
-import re
-import base64
 import cv2
-
-# Try to import Plotly with error handling
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError as e:
-    st.error(f"❌ Plotly import error: {e}")
-    PLOTLY_AVAILABLE = False
 
 # Try to import Ultralytics with error handling  
 try:
@@ -139,12 +127,12 @@ def show_installation_instructions():
         **Please install required packages:**
 
         ```bash
-        pip install plotly ultralytics opencv-python pillow pandas numpy streamlit
+        pip install ultralytics opencv-python pillow pandas numpy streamlit
         ```
 
-        **Or install all at once:**
+        **For basic functionality (without AI):**
         ```bash
-        pip install plotly ultralytics opencv-python pillow pandas numpy streamlit
+        pip install opencv-python pillow pandas numpy streamlit
         ```
         """)
         
@@ -574,17 +562,24 @@ def generate_analysis_report(analysis_data, analysis_type):
     
     return report_content
 
-def create_simple_chart(data, title, chart_type="bar"):
-    """Create simple charts using Streamlit's native functions when Plotly is not available"""
-    if chart_type == "bar":
+def create_simple_bar_chart(data, title):
+    """Create simple bar chart using Streamlit's native functions"""
+    if isinstance(data, dict):
+        chart_data = pd.DataFrame(list(data.items()), columns=['Category', 'Count'])
+        st.bar_chart(chart_data.set_index('Category'))
+    elif isinstance(data, pd.DataFrame):
         st.bar_chart(data)
-    elif chart_type == "line":
+    st.write(f"**{title}**")
+
+def create_simple_line_chart(data, title):
+    """Create simple line chart using Streamlit's native functions"""
+    if isinstance(data, pd.DataFrame):
         st.line_chart(data)
     st.write(f"**{title}**")
 
 def main():
     # Show installation instructions if dependencies are missing
-    if not PLOTLY_AVAILABLE or not YOLO_AVAILABLE:
+    if not YOLO_AVAILABLE:
         show_installation_instructions()
     
     # SafetyEagle Header with Oil & Gas Theme
@@ -599,10 +594,9 @@ def main():
     st.sidebar.markdown("---")
     
     # Dependency status
-    if not PLOTLY_AVAILABLE:
-        st.sidebar.error("❌ Plotly Not Available")
     if not YOLO_AVAILABLE:
         st.sidebar.error("❌ YOLO Not Available")
+        st.sidebar.info("Using basic functionality mode")
     
     # Display project info if available
     if st.session_state.project_info['project_name']:
@@ -1243,74 +1237,6 @@ def display_video_analysis_summary(analysis_results):
                 st.write(f"**Confidence:** {violation['confidence']}")
                 st.write(f"**Total Detections:** {violation['total_detections']}")
 
-def show_detection_settings():
-    """Detection settings tab"""
-    st.markdown('<h2 class="section-header">⚙️ Detection Settings</h2>', unsafe_allow_html=True)
-    
-    st.info("Configure AI detection parameters for optimal safety monitoring")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.subheader("Detection Sensitivity")
-        confidence = st.slider(
-            "Confidence Threshold",
-            min_value=0.1,
-            max_value=0.9,
-            value=st.session_state.detection_settings.get('confidence', 0.5),
-            step=0.05,
-            help="Higher values = fewer but more accurate detections"
-        )
-    
-    with col2:
-        st.subheader("Processing Speed")
-        speed_setting = st.selectbox(
-            "Detection Speed",
-            options=["fast", "medium", "accurate"],
-            index=1,
-            help="Balance between speed and accuracy"
-        )
-    
-    with col3:
-        st.subheader("Frame Processing")
-        frame_skip = st.slider(
-            "Frame Skip Rate",
-            min_value=1,
-            max_value=10,
-            value=st.session_state.detection_settings.get('frame_skip', 3),
-            help="Process every Nth frame for performance"
-        )
-    
-    # Save settings
-    if st.button("💾 Save Detection Settings", type="primary", use_container_width=True):
-        st.session_state.detection_settings = {
-            'confidence': confidence,
-            'speed': speed_setting,
-            'frame_skip': frame_skip
-        }
-        st.success("✅ Detection settings saved successfully!")
-    
-    # Current configuration display
-    st.subheader("Current Configuration")
-    col1, col2 = st.columns(2)
-    with col1:
-        project_name = st.session_state.project_info['project_name'] or 'Not set'
-        work_type = st.session_state.project_info['work_type'] or 'Not set'
-        workers = st.session_state.project_info['workers_assigned']
-        
-        st.info(f"""
-        **Project:** {project_name}
-        **Work Type:** {work_type}
-        **Workers:** {workers}
-        """)
-    with col2:
-        st.info(f"""
-        **PPE Items:** {len(st.session_state.selected_ppe)}
-        **Confidence:** {confidence}
-        **Speed:** {speed_setting.title()}
-        **Frame Skip:** {frame_skip}
-        """)
-
 def show_dashboard():
     """Enhanced dashboard tab"""
     st.markdown('<h2 class="section-header">📊 Safety Dashboard</h2>', unsafe_allow_html=True)
@@ -1359,47 +1285,44 @@ def show_dashboard():
         avg_violations_per_worker = total_violations / workers
         st.metric("Avg Violations/Worker", f"{avg_violations_per_worker:.1f}")
     
-    # Charts and visualizations
+    # Charts and visualizations using Streamlit's native charts
     st.subheader("📊 Safety Analytics")
     
-    if not PLOTLY_AVAILABLE:
-        st.warning("📊 Plotly not available. Using basic charts.")
-        # Create simple charts using Streamlit's native functions
-        df = pd.DataFrame([
-            {
-                'timestamp': v['timestamp'],
-                'hour': v['timestamp'].hour,
-                'date': v['timestamp'].date()
-            }
-            for v in st.session_state.violations
-        ])
+    # Create data for charts
+    df = pd.DataFrame([
+        {
+            'timestamp': v['timestamp'],
+            'hour': v['timestamp'].hour,
+            'date': v['timestamp'].date()
+        }
+        for v in st.session_state.violations
+    ])
+    
+    if not df.empty:
+        # Daily violations line chart
+        daily_data = df.groupby('date').size().reset_index(name='violations')
+        st.line_chart(daily_data.set_index('date')['violations'])
+        st.write("**Safety Violations Trend - Daily**")
         
-        if not df.empty:
-            # Daily violations
-            daily_data = df.groupby('date').size().reset_index(name='violations')
-            st.line_chart(daily_data.set_index('date')['violations'])
-            st.write("**Safety Violations Trend - Daily**")
-            
-            # Hourly distribution
-            hourly_data = df.groupby('hour').size().reset_index(name='violations')
-            st.bar_chart(hourly_data.set_index('hour')['violations'])
-            st.write("**Violations by Hour of Day**")
-    else:
-        # User-selectable chart types
-        chart_type = st.selectbox(
-            "Select Chart Type",
-            ["Violations Over Time", "PPE Compliance by Equipment", "Worker vs Violations", "Heatmap Analysis"],
-            help="Choose the type of safety analysis to display"
-        )
+        # Hourly distribution bar chart
+        hourly_data = df.groupby('hour').size().reset_index(name='violations')
+        st.bar_chart(hourly_data.set_index('hour')['violations'])
+        st.write("**Violations by Hour of Day**")
         
-        if chart_type == "Violations Over Time":
-            show_violations_over_time()
-        elif chart_type == "PPE Compliance by Equipment":
-            show_ppe_compliance()
-        elif chart_type == "Worker vs Violations":
-            show_worker_violations_correlation()
-        elif chart_type == "Heatmap Analysis":
-            show_heatmap_analysis()
+        # Equipment violations
+        equipment_violations = {}
+        for violation in st.session_state.violations:
+            if isinstance(violation['missing_classes'], str):
+                missing_items = violation['missing_classes'].split(', ')
+            else:
+                missing_items = violation['missing_classes']
+            for item in missing_items:
+                equipment_violations[item] = equipment_violations.get(item, 0) + 1
+        
+        if equipment_violations:
+            equipment_df = pd.DataFrame(list(equipment_violations.items()), columns=['Equipment', 'Violations'])
+            st.bar_chart(equipment_df.set_index('Equipment')['Violations'])
+            st.write("**PPE Violations by Equipment Type**")
     
     # Recent violations
     st.subheader("🚨 Recent Safety Violations")
@@ -1421,147 +1344,6 @@ def show_dashboard():
                 st.write(f"**Time:** {violation['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
                 st.write(f"**Work Type:** {st.session_state.project_info['work_type']}")
                 st.write(f"**Source:** {violation['source']}")
-
-def show_violations_over_time():
-    """Show violations over time chart"""
-    if not PLOTLY_AVAILABLE:
-        st.warning("Plotly not available for advanced charts")
-        return
-        
-    df = pd.DataFrame([
-        {
-            'timestamp': v['timestamp'],
-            'hour': v['timestamp'].hour,
-            'date': v['timestamp'].date()
-        }
-        for v in st.session_state.violations
-    ])
-    
-    if not df.empty:
-        # Daily violations
-        daily_data = df.groupby('date').size().reset_index(name='violations')
-        fig = px.line(daily_data, x='date', y='violations', 
-                     title="Safety Violations Trend - Daily",
-                     markers=True)
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Hourly distribution
-        hourly_data = df.groupby('hour').size().reset_index(name='violations')
-        fig2 = px.bar(hourly_data, x='hour', y='violations',
-                     title="Violations by Hour of Day",
-                     color='violations')
-        st.plotly_chart(fig2, use_container_width=True)
-
-def show_ppe_compliance():
-    """Show PPE compliance by equipment type"""
-    if not PLOTLY_AVAILABLE:
-        st.warning("Plotly not available for advanced charts")
-        return
-        
-    equipment_violations = {}
-    for violation in st.session_state.violations:
-        if isinstance(violation['missing_classes'], str):
-            missing_items = violation['missing_classes'].split(', ')
-        else:
-            missing_items = violation['missing_classes']
-        for item in missing_items:
-            equipment_violations[item] = equipment_violations.get(item, 0) + 1
-    
-    if equipment_violations:
-        fig = px.pie(values=list(equipment_violations.values()), 
-                    names=list(equipment_violations.keys()),
-                    title="PPE Violations Distribution")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Compliance rate by equipment
-        total_checks = len(st.session_state.violations) * max(1, len(st.session_state.selected_ppe))
-        compliance_data = []
-        for equipment, violations in equipment_violations.items():
-            compliance_rate = max(0, 100 - (violations / total_checks * 100))
-            compliance_data.append({'Equipment': equipment, 'Compliance Rate': compliance_rate})
-        
-        if compliance_data:
-            df_compliance = pd.DataFrame(compliance_data)
-            fig2 = px.bar(df_compliance, x='Equipment', y='Compliance Rate',
-                         title="PPE Compliance Rate by Equipment",
-                         color='Compliance Rate')
-            st.plotly_chart(fig2, use_container_width=True)
-
-def show_worker_violations_correlation():
-    """Show correlation between workers and violations"""
-    if not PLOTLY_AVAILABLE:
-        st.warning("Plotly not available for advanced charts")
-        return
-        
-    workers = max(1, st.session_state.project_info['workers_assigned'])
-    violations = len(st.session_state.violations)
-    
-    # Use actual data when available, otherwise show message
-    if violations == 0:
-        st.info("No violation data available for worker correlation analysis")
-        return
-    
-    # Simulate worker-wise data for visualization (based on actual violations)
-    worker_data = []
-    for i in range(workers):
-        worker_violations = np.random.poisson(max(1, violations / workers))
-        worker_data.append({
-            'Worker_ID': f"W{i+1:03d}",
-            'Violations': worker_violations,
-            'Department': np.random.choice(['Drilling', 'Maintenance', 'Operations', 'Safety'])
-        })
-    
-    df_workers = pd.DataFrame(worker_data)
-    
-    fig = px.scatter(df_workers, x='Worker_ID', y='Violations', color='Department',
-                    title="Worker Safety Performance",
-                    size='Violations', hover_data=['Department'])
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Department-wise analysis
-    dept_data = df_workers.groupby('Department')['Violations'].mean().reset_index()
-    fig2 = px.bar(dept_data, x='Department', y='Violations',
-                 title="Average Violations by Department",
-                 color='Violations')
-    st.plotly_chart(fig2, use_container_width=True)
-
-def show_heatmap_analysis():
-    """Show heatmap analysis"""
-    if not PLOTLY_AVAILABLE:
-        st.warning("Plotly not available for advanced charts")
-        return
-        
-    # Use actual violation data for heatmap
-    if not st.session_state.violations:
-        st.info("No violation data available for heatmap analysis")
-        return
-    
-    # Generate time-based heatmap data from actual violations
-    hours = list(range(24))
-    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    
-    # Create heatmap data from actual violations
-    heatmap_data = np.zeros((7, 24))
-    for violation in st.session_state.violations:
-        day_idx = violation['timestamp'].weekday()
-        hour_idx = violation['timestamp'].hour
-        heatmap_data[day_idx, hour_idx] += 1
-    
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_data,
-        x=hours,
-        y=days,
-        colorscale='Viridis',
-        hoverongaps=False
-    ))
-    
-    fig.update_layout(
-        title="Safety Violations Heatmap (Time vs Day)",
-        xaxis_title="Hour of Day",
-        yaxis_title="Day of Week"
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
 
 def show_reports():
     """Professional reports tab"""
