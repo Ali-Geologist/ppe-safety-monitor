@@ -7,14 +7,28 @@ import os
 from pathlib import Path
 import tempfile
 from PIL import Image
-import plotly.express as px
-import plotly.graph_objects as go
 import io
 import requests
 import re
 import base64
 import cv2
-from ultralytics import YOLO
+
+# Try to import Plotly with error handling
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError as e:
+    st.error(f"❌ Plotly import error: {e}")
+    PLOTLY_AVAILABLE = False
+
+# Try to import Ultralytics with error handling  
+try:
+    from ultralytics import YOLO
+    YOLO_AVAILABLE = True
+except ImportError as e:
+    st.error(f"❌ YOLO import error: {e}")
+    YOLO_AVAILABLE = False
 
 # Set page configuration with SafetyEagle branding
 st.set_page_config(
@@ -116,6 +130,27 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Installation instructions sidebar
+def show_installation_instructions():
+    """Show installation instructions for missing dependencies"""
+    with st.sidebar.expander("🔧 Installation Required", expanded=True):
+        st.error("Missing Dependencies Detected!")
+        st.markdown("""
+        **Please install required packages:**
+
+        ```bash
+        pip install plotly ultralytics opencv-python pillow pandas numpy streamlit
+        ```
+
+        **Or install all at once:**
+        ```bash
+        pip install plotly ultralytics opencv-python pillow pandas numpy streamlit
+        ```
+        """)
+        
+        if st.button("🔄 Check Dependencies Again"):
+            st.rerun()
+
 # Initialize session state with safe default values
 def initialize_session_state():
     """Initialize all session state variables with safe defaults"""
@@ -183,6 +218,10 @@ OIL_GAS_PPE_CLASSES = {
 def load_model_and_classes():
     """Load model with caching"""
     try:
+        if not YOLO_AVAILABLE:
+            st.error("❌ YOLO not available. Using demo mode.")
+            return None, OIL_GAS_PPE_CLASSES, "demo"
+            
         # Try multiple possible model paths
         possible_paths = [
             "models/best.pt",
@@ -250,7 +289,7 @@ def add_safety_violation(violation_data):
 
 def analyze_image(image, source_name="Photo Analysis"):
     """Analyze image for PPE violations"""
-    if st.session_state.model is None:
+    if st.session_state.model is None or not YOLO_AVAILABLE:
         st.error("❌ Model not loaded. Cannot perform analysis.")
         return None
     
@@ -311,7 +350,7 @@ def analyze_image(image, source_name="Photo Analysis"):
 
 def analyze_video(video_path, source_name="Video Analysis"):
     """Analyze video for PPE violations"""
-    if st.session_state.model is None:
+    if st.session_state.model is None or not YOLO_AVAILABLE:
         st.error("❌ Model not loaded. Cannot perform analysis.")
         return None
     
@@ -535,7 +574,19 @@ def generate_analysis_report(analysis_data, analysis_type):
     
     return report_content
 
+def create_simple_chart(data, title, chart_type="bar"):
+    """Create simple charts using Streamlit's native functions when Plotly is not available"""
+    if chart_type == "bar":
+        st.bar_chart(data)
+    elif chart_type == "line":
+        st.line_chart(data)
+    st.write(f"**{title}**")
+
 def main():
+    # Show installation instructions if dependencies are missing
+    if not PLOTLY_AVAILABLE or not YOLO_AVAILABLE:
+        show_installation_instructions()
+    
     # SafetyEagle Header with Oil & Gas Theme
     st.markdown('<h1 class="eagle-header">🦅 SafetyEagle AI</h1>', unsafe_allow_html=True)
     st.markdown('<p class="eagle-tagline">Advanced PPE Monitoring for Oil & Gas Industry</p>', unsafe_allow_html=True)
@@ -546,6 +597,12 @@ def main():
     # Show system status in sidebar
     st.sidebar.markdown("### 🦅 SafetyEagle Status")
     st.sidebar.markdown("---")
+    
+    # Dependency status
+    if not PLOTLY_AVAILABLE:
+        st.sidebar.error("❌ Plotly Not Available")
+    if not YOLO_AVAILABLE:
+        st.sidebar.error("❌ YOLO Not Available")
     
     # Display project info if available
     if st.session_state.project_info['project_name']:
@@ -571,7 +628,7 @@ def main():
     st.sidebar.metric("Cameras Configured", len(st.session_state.camera_urls))
     
     # Main tabs for workflow
-    tabs = st.tabs([
+    tab_names = [
         "🏢 Project Setup", 
         "🛡️ PPE Selection", 
         "📷 Camera Setup", 
@@ -580,7 +637,10 @@ def main():
         "📹 Live Monitoring",
         "📊 Dashboard", 
         "📈 Reports"
-    ])
+    ]
+    
+    # Create tabs
+    tabs = st.tabs(tab_names)
     
     with tabs[0]:
         show_project_setup()
@@ -1302,21 +1362,44 @@ def show_dashboard():
     # Charts and visualizations
     st.subheader("📊 Safety Analytics")
     
-    # User-selectable chart types
-    chart_type = st.selectbox(
-        "Select Chart Type",
-        ["Violations Over Time", "PPE Compliance by Equipment", "Worker vs Violations", "Heatmap Analysis"],
-        help="Choose the type of safety analysis to display"
-    )
-    
-    if chart_type == "Violations Over Time":
-        show_violations_over_time()
-    elif chart_type == "PPE Compliance by Equipment":
-        show_ppe_compliance()
-    elif chart_type == "Worker vs Violations":
-        show_worker_violations_correlation()
-    elif chart_type == "Heatmap Analysis":
-        show_heatmap_analysis()
+    if not PLOTLY_AVAILABLE:
+        st.warning("📊 Plotly not available. Using basic charts.")
+        # Create simple charts using Streamlit's native functions
+        df = pd.DataFrame([
+            {
+                'timestamp': v['timestamp'],
+                'hour': v['timestamp'].hour,
+                'date': v['timestamp'].date()
+            }
+            for v in st.session_state.violations
+        ])
+        
+        if not df.empty:
+            # Daily violations
+            daily_data = df.groupby('date').size().reset_index(name='violations')
+            st.line_chart(daily_data.set_index('date')['violations'])
+            st.write("**Safety Violations Trend - Daily**")
+            
+            # Hourly distribution
+            hourly_data = df.groupby('hour').size().reset_index(name='violations')
+            st.bar_chart(hourly_data.set_index('hour')['violations'])
+            st.write("**Violations by Hour of Day**")
+    else:
+        # User-selectable chart types
+        chart_type = st.selectbox(
+            "Select Chart Type",
+            ["Violations Over Time", "PPE Compliance by Equipment", "Worker vs Violations", "Heatmap Analysis"],
+            help="Choose the type of safety analysis to display"
+        )
+        
+        if chart_type == "Violations Over Time":
+            show_violations_over_time()
+        elif chart_type == "PPE Compliance by Equipment":
+            show_ppe_compliance()
+        elif chart_type == "Worker vs Violations":
+            show_worker_violations_correlation()
+        elif chart_type == "Heatmap Analysis":
+            show_heatmap_analysis()
     
     # Recent violations
     st.subheader("🚨 Recent Safety Violations")
@@ -1341,6 +1424,10 @@ def show_dashboard():
 
 def show_violations_over_time():
     """Show violations over time chart"""
+    if not PLOTLY_AVAILABLE:
+        st.warning("Plotly not available for advanced charts")
+        return
+        
     df = pd.DataFrame([
         {
             'timestamp': v['timestamp'],
@@ -1367,6 +1454,10 @@ def show_violations_over_time():
 
 def show_ppe_compliance():
     """Show PPE compliance by equipment type"""
+    if not PLOTLY_AVAILABLE:
+        st.warning("Plotly not available for advanced charts")
+        return
+        
     equipment_violations = {}
     for violation in st.session_state.violations:
         if isinstance(violation['missing_classes'], str):
@@ -1398,6 +1489,10 @@ def show_ppe_compliance():
 
 def show_worker_violations_correlation():
     """Show correlation between workers and violations"""
+    if not PLOTLY_AVAILABLE:
+        st.warning("Plotly not available for advanced charts")
+        return
+        
     workers = max(1, st.session_state.project_info['workers_assigned'])
     violations = len(st.session_state.violations)
     
@@ -1432,6 +1527,10 @@ def show_worker_violations_correlation():
 
 def show_heatmap_analysis():
     """Show heatmap analysis"""
+    if not PLOTLY_AVAILABLE:
+        st.warning("Plotly not available for advanced charts")
+        return
+        
     # Use actual violation data for heatmap
     if not st.session_state.violations:
         st.info("No violation data available for heatmap analysis")
