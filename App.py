@@ -606,15 +606,6 @@ def main():
         st.sidebar.write(f"**Engineer:** {st.session_state.project_info['engineer_name']}")
         st.sidebar.markdown("---")
     
-    # Model status
-    if st.session_state.model_loaded:
-        if st.session_state.demo_mode:
-            st.sidebar.warning("🟡 Demo Mode Active")
-        else:
-            st.sidebar.success("✅ AI Model Loaded")
-    else:
-        st.sidebar.error("❌ Model Not Loaded")
-    
     # Quick stats
     st.sidebar.markdown("### 📊 Quick Stats")
     st.sidebar.metric("Total Violations", len(st.session_state.violations))
@@ -1585,3 +1576,4 @@ def generate_performance_metrics():
 
 if __name__ == "__main__":
     main()
+
