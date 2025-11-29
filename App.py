@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import io
+from PIL import Image
 
 # Set page configuration with modern branding
 st.set_page_config(
@@ -230,6 +231,26 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Mobile camera specific styles */
+    .camera-container {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    
+    .camera-overlay {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 0.8rem;
+        z-index: 10;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -251,6 +272,8 @@ def initialize_session_state():
         st.session_state.camera_urls = []
     if 'mobile_camera_active' not in st.session_state:
         st.session_state.mobile_camera_active = False
+    if 'camera_image' not in st.session_state:
+        st.session_state.camera_image = None
     if 'project_info' not in st.session_state:
         st.session_state.project_info = {
             'company_name': '',
@@ -354,6 +377,24 @@ def get_violation_stats():
     
     return ppe_violations, time_violations
 
+def analyze_image_for_ppe(image):
+    """Simulate PPE detection analysis on the captured image"""
+    # This is a simulation - in a real app, you'd use a trained model here
+    import random
+    
+    # Simulate AI analysis with random results for demonstration
+    detected_ppe = []
+    missing_ppe = []
+    
+    for ppe_id, ppe_data in st.session_state.selected_ppe.items():
+        # 80% chance of detecting each selected PPE item
+        if random.random() < 0.8:
+            detected_ppe.append(ppe_data)
+        else:
+            missing_ppe.append(ppe_data)
+    
+    return detected_ppe, missing_ppe
+
 def main():
     # Modern Header
     st.markdown("""
@@ -390,42 +431,31 @@ def show_dashboard():
     with col1:
         st.markdown('<div class="modern-card"><div class="card-header">📹 Live Camera Feed</div></div>', unsafe_allow_html=True)
         
-        # Camera feed based on monitoring status
-        if st.session_state.monitoring:
-            if st.session_state.mobile_camera_active:
-                st.markdown("""
-                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
-                            border-radius: 12px; 
-                            height: 400px; 
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center; 
-                            color: white;
-                            margin-bottom: 1rem;">
-                    <div style="text-align: center;">
-                        <div style="font-size: 4rem; margin-bottom: 1rem;">📱</div>
-                        <h3>Mobile Camera Active</h3>
-                        <p>Live PPE monitoring via mobile camera</p>
-                    </div>
+        # Show actual camera image if available
+        if st.session_state.camera_image is not None:
+            st.image(st.session_state.camera_image, 
+                    caption="Latest Camera Capture - PPE Analysis Ready", 
+                    use_column_width=True)
+            
+            # Show analysis results if we have a recent image
+            st.info("🔄 Ready for PPE analysis. Go to Live Monitoring to analyze this image.")
+        elif st.session_state.mobile_camera_active:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
+                        border-radius: 12px; 
+                        height: 400px; 
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center; 
+                        color: white;
+                        margin-bottom: 1rem;">
+                <div style="text-align: center;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">📱</div>
+                    <h3>Mobile Camera Active</h3>
+                    <p>Go to Live Monitoring to capture images</p>
                 </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                            border-radius: 12px; 
-                            height: 400px; 
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center; 
-                            color: white;
-                            margin-bottom: 1rem;">
-                    <div style="text-align: center;">
-                        <div style="font-size: 4rem; margin-bottom: 1rem;">📹</div>
-                        <h3>Live Monitoring Active</h3>
-                        <p>Real-time AI-powered safety detection</p>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.markdown("""
             <div style="background: #f8fafc; 
@@ -440,7 +470,7 @@ def show_dashboard():
                 <div style="text-align: center;">
                     <div style="font-size: 4rem; margin-bottom: 1rem;">🔒</div>
                     <h3>Monitoring Inactive</h3>
-                    <p>Start monitoring to begin PPE detection</p>
+                    <p>Start mobile camera to begin PPE detection</p>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -481,139 +511,123 @@ def show_dashboard():
         
         st.markdown('<div class="modern-card"><div class="card-header">🔧 Quick Actions</div></div>', unsafe_allow_html=True)
         
-        if not st.session_state.monitoring:
-            if st.button("🎬 Start Mobile Camera", use_container_width=True, type="primary"):
-                st.session_state.monitoring = True
-                st.session_state.mobile_camera_active = True
-                st.success("Mobile camera monitoring started!")
-        else:
-            if st.button("⏹️ Stop Monitoring", use_container_width=True):
-                st.session_state.monitoring = False
-                st.session_state.mobile_camera_active = False
-                st.info("Monitoring stopped")
-        
-        if st.button("📊 Generate Report", use_container_width=True):
-            report_content = generate_safety_report()
-            st.download_button(
-                label="📥 Download Safety Report",
-                data=report_content,
-                file_name=f"safety_report_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                mime="text/plain"
-            )
+        if st.button("📱 Go to Mobile Camera", use_container_width=True, type="primary"):
+            st.switch_page("?tab=Live+Monitoring")
 
 def show_live_monitoring():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown('<div class="modern-card"><div class="card-header">🎥 Camera Configuration</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="modern-card"><div class="card-header">📱 Mobile Camera Live Monitoring</div></div>', unsafe_allow_html=True)
         
-        # Camera setup
-        tab1, tab2 = st.tabs(["📱 Mobile Camera", "📡 IP Camera"])
+        # Mobile Camera Section
+        st.subheader("📸 Capture Image for PPE Analysis")
         
-        with tab1:
-            st.subheader("Mobile Camera Live Feed")
-            st.info("Use your mobile device camera for real-time PPE monitoring")
+        # Streamlit's camera input
+        camera_image = st.camera_input(
+            "Take a picture for PPE detection",
+            help="Position camera to capture workers and their safety equipment clearly"
+        )
+        
+        if camera_image is not None:
+            # Store the image in session state
+            st.session_state.camera_image = camera_image
+            st.session_state.mobile_camera_active = True
+            st.session_state.monitoring = True
             
-            if not st.session_state.mobile_camera_active:
-                if st.button("📱 Activate Mobile Camera", type="primary", use_container_width=True):
-                    st.session_state.mobile_camera_active = True
-                    st.session_state.monitoring = True
-                    st.success("Mobile camera activated! Grant camera permissions when prompted.")
-                
-                # Instructions for mobile camera usage
-                st.markdown("""
-                ### 📋 Mobile Camera Instructions:
-                1. **Grant camera permissions** when prompted by your browser
-                2. **Position camera** to monitor work area
-                3. **Ensure good lighting** for optimal detection
-                4. **Keep camera steady** for consistent monitoring
-                
-                ### 🎯 Best Practices:
-                - Monitor from 3-5 meters distance
-                - Ensure clear view of workers' full body
-                - Avoid direct sunlight or harsh shadows
-                - Position at eye level for best angle
-                """)
+            # Display the captured image
+            st.image(camera_image, caption="Captured Image - Ready for Analysis", use_column_width=True)
+            
+            # PPE Analysis Section
+            st.subheader("🔍 PPE Detection Analysis")
+            
+            if st.button("🎯 Analyze PPE Compliance", type="primary", use_container_width=True):
+                with st.spinner("Analyzing image for PPE compliance..."):
+                    # Simulate processing time
+                    time.sleep(2)
+                    
+                    # Analyze the image for PPE
+                    detected_ppe, missing_ppe = analyze_image_for_ppe(camera_image)
+                    
+                    # Display results
+                    col_result1, col_result2 = st.columns(2)
+                    
+                    with col_result1:
+                        st.success("✅ Detected PPE Items:")
+                        for ppe in detected_ppe:
+                            st.write(f"- {ppe}")
+                    
+                    with col_result2:
+                        if missing_ppe:
+                            st.error("❌ Missing PPE Items:")
+                            for ppe in missing_ppe:
+                                st.write(f"- {ppe}")
+                            
+                            # Auto-report violation
+                            violation = {
+                                'timestamp': datetime.now(),
+                                'missing_classes': ', '.join(missing_ppe),
+                                'worker_id': 'Camera Detection',
+                                'source': 'Mobile Camera AI',
+                                'image': camera_image
+                            }
+                            st.session_state.violations.append(violation)
+                            st.error(f"🚨 Violation reported: {', '.join(missing_ppe)}")
+                        else:
+                            st.success("🎉 All required PPE items detected!")
+            
+            # Manual violation reporting as backup
+            st.subheader("📝 Manual PPE Check")
+            st.info("Use this if automatic detection needs correction")
+            
+            col_manual1, col_manual2 = st.columns(2)
+            with col_manual1:
+                missing_ppe_manual = st.multiselect(
+                    "Manually report missing PPE:",
+                    [ppe["name"] for ppe in PPE_CLASSES.values()],
+                    help="Select any missing PPE items you observe"
+                )
+            with col_manual2:
+                worker_id_manual = st.text_input("Worker ID:", placeholder="W001")
+            
+            if st.button("🚨 Report Manual Violation", type="secondary"):
+                if missing_ppe_manual:
+                    violation = {
+                        'timestamp': datetime.now(),
+                        'missing_classes': ', '.join(missing_ppe_manual),
+                        'worker_id': worker_id_manual or 'Unknown',
+                        'source': 'Manual Report',
+                        'image': camera_image
+                    }
+                    st.session_state.violations.append(violation)
+                    st.error(f"Violation reported: {', '.join(missing_ppe_manual)}")
+                else:
+                    st.warning("Please select missing PPE items")
+        
+        else:
+            # Camera instructions when no image is captured
+            st.info("""
+            ### 📋 Mobile Camera Instructions:
+            
+            1. **Click the camera button above** to activate your device camera
+            2. **Allow camera permissions** when prompted by your browser
+            3. **Position your device** to monitor the work area
+            4. **Capture clear images** of workers and their safety equipment
+            5. **Click 'Analyze PPE Compliance'** to check for violations
+            
+            ### 🎯 Best Practices:
+            - Capture from 3-5 meters distance
+            - Ensure good lighting conditions
+            - Include full body view of workers
+            - Avoid blurry or dark images
+            - Position at eye level for best angle
+            """)
+            
+            # Show camera status
+            if st.session_state.mobile_camera_active:
+                st.success("✅ Mobile camera is ready - waiting for image capture")
             else:
-                # Mobile camera interface
-                st.success("✅ Mobile camera is active and monitoring")
-                
-                # Simulated camera feed with mobile styling
-                st.markdown("""
-                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
-                            border-radius: 12px; 
-                            height: 400px; 
-                            display: flex; 
-                            align-items: center; 
-                            justify-content: center; 
-                            color: white;
-                            margin-bottom: 1rem;
-                            position: relative;">
-                    <div style="text-align: center;">
-                        <div style="font-size: 4rem; margin-bottom: 1rem;">📱</div>
-                        <h3>Mobile Camera Live</h3>
-                        <p>PPE Detection Active</p>
-                    </div>
-                    <div style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); 
-                              padding: 5px 10px; border-radius: 15px; font-size: 0.8rem;">
-                        🔴 LIVE
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Manual violation reporting
-                st.subheader("Manual PPE Check")
-                col_check1, col_check2 = st.columns(2)
-                with col_check1:
-                    missing_ppe = st.multiselect(
-                        "Missing PPE Items:",
-                        [ppe["name"] for ppe in PPE_CLASSES.values()],
-                        help="Select any missing PPE items observed"
-                    )
-                with col_check2:
-                    worker_id = st.text_input("Worker ID (Optional):", placeholder="W001")
-                
-                if st.button("🚨 Report Violation", type="secondary"):
-                    if missing_ppe:
-                        violation = {
-                            'timestamp': datetime.now(),
-                            'missing_classes': ', '.join(missing_ppe),
-                            'worker_id': worker_id or 'Unknown',
-                            'source': 'Mobile Camera'
-                        }
-                        st.session_state.violations.append(violation)
-                        st.error(f"Violation reported: {', '.join(missing_ppe)}")
-                    else:
-                        st.warning("Please select missing PPE items")
-                
-                if st.button("⏹️ Stop Mobile Camera", use_container_width=True):
-                    st.session_state.mobile_camera_active = False
-                    st.session_state.monitoring = False
-                    st.info("Mobile camera monitoring stopped")
-        
-        with tab2:
-            st.subheader("IP Camera Setup")
-            camera_url = st.text_input(
-                "Camera RTSP URL:",
-                placeholder="rtsp://username:password@192.168.1.100:554/stream",
-                help="Enter your IP camera RTSP stream URL"
-            )
-            
-            col1a, col1b = st.columns(2)
-            with col1a:
-                if st.button("🔗 Test Connection", use_container_width=True):
-                    if camera_url:
-                        st.info("IP camera functionality requires OpenCV. Use mobile camera for live monitoring.")
-                    else:
-                        st.error("Please enter a camera URL")
-            with col1b:
-                if st.button("➕ Add Camera", use_container_width=True, type="primary"):
-                    if camera_url:
-                        if camera_url not in st.session_state.camera_urls:
-                            st.session_state.camera_urls.append(camera_url)
-                            st.success("Camera added to list!")
-                    else:
-                        st.error("Please enter a camera URL first")
+                st.warning("📱 Camera not active - click the camera button to start")
     
     with col2:
         st.markdown('<div class="modern-card"><div class="card-header">⚙️ Detection Settings</div></div>', unsafe_allow_html=True)
@@ -654,6 +668,14 @@ def show_live_monitoring():
                 del st.session_state.selected_ppe[ppe_id]
         
         st.info(f"Monitoring {selected_count} PPE items")
+        
+        # Quick actions
+        st.markdown('<div class="modern-card"><div class="card-header">🔧 Quick Actions</div></div>', unsafe_allow_html=True)
+        
+        if st.session_state.camera_image is not None:
+            if st.button("🔄 Clear Current Image", use_container_width=True):
+                st.session_state.camera_image = None
+                st.rerun()
 
 def show_configuration():
     col1, col2 = st.columns([1, 1])
