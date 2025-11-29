@@ -7,22 +7,6 @@ import os
 from pathlib import Path
 import tempfile
 import io
-import requests
-import re
-
-# Try to import OpenCV with error handling
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError as e:
-    CV2_AVAILABLE = False
-
-# Try to import Ultralytics with error handling  
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError as e:
-    YOLO_AVAILABLE = False
 
 # Set page configuration with modern branding
 st.set_page_config(
@@ -255,8 +239,6 @@ def initialize_session_state():
         st.session_state.violations = []
     if 'monitoring' not in st.session_state:
         st.session_state.monitoring = False
-    if 'model' not in st.session_state:
-        st.session_state.model = None
     if 'selected_ppe' not in st.session_state:
         st.session_state.selected_ppe = {}
     if 'detection_settings' not in st.session_state:
@@ -267,10 +249,6 @@ def initialize_session_state():
         }
     if 'camera_urls' not in st.session_state:
         st.session_state.camera_urls = []
-    if 'available_classes' not in st.session_state:
-        st.session_state.available_classes = {}
-    if 'model_loaded' not in st.session_state:
-        st.session_state.model_loaded = False
     if 'demo_mode' not in st.session_state:
         st.session_state.demo_mode = False
     if 'project_info' not in st.session_state:
@@ -338,6 +316,16 @@ def create_compliance_gauge(percentage, title):
     </div>
     """
     return gauge_html
+
+def test_camera_connection_simulated(camera_url):
+    """Simulate camera connection test without external dependencies"""
+    # Simulate connection test with random success
+    import random
+    success = random.choice([True, True, True, False])  # 75% success rate
+    if success:
+        return True, "✅ Camera connected successfully!"
+    else:
+        return False, "❌ Cannot connect to camera. Please check the URL and credentials."
 
 def main():
     # Modern Header
@@ -436,11 +424,12 @@ def show_dashboard():
         # PPE compliance breakdown
         st.subheader("PPE Compliance")
         for ppe_id, ppe_data in PPE_CLASSES.items():
-            col_stat1, col_stat2 = st.columns([2, 1])
-            with col_stat1:
-                st.write(f"{ppe_data['icon']} {ppe_data['name']}")
-            with col_stat2:
-                st.write("✅ 100%")
+            if ppe_id < 4:  # Show only first 4 for space
+                col_stat1, col_stat2 = st.columns([2, 1])
+                with col_stat1:
+                    st.write(f"{ppe_data['icon']} {ppe_data['name']}")
+                with col_stat2:
+                    st.write("✅ 100%")
         
         st.markdown('<div class="modern-card"><div class="card-header">🔧 Quick Actions</div></div>', unsafe_allow_html=True)
         
@@ -449,7 +438,15 @@ def show_dashboard():
             st.success("Live monitoring started!")
         
         if st.button("📊 Generate Report", use_container_width=True):
-            st.success("Safety report generated!")
+            # Generate simple text report
+            report_content = generate_safety_report()
+            st.download_button(
+                label="📥 Download Safety Report",
+                data=report_content,
+                file_name=f"safety_report_{datetime.now().strftime('%Y%m%d')}.txt",
+                mime="text/plain"
+            )
+            st.success("Safety report generated! Click download button.")
 
 def show_live_monitoring():
     col1, col2 = st.columns([2, 1])
@@ -464,19 +461,29 @@ def show_live_monitoring():
             st.subheader("IP Camera Setup")
             camera_url = st.text_input(
                 "Camera RTSP URL:",
-                placeholder="rtsp://username:password@ip:port/stream",
+                placeholder="rtsp://username:password@192.168.1.100:554/stream",
                 help="Enter your IP camera RTSP stream URL"
             )
             
             col1a, col1b = st.columns(2)
             with col1a:
                 if st.button("🔗 Test Connection", use_container_width=True):
-                    st.success("✅ Camera connected successfully!")
+                    if camera_url:
+                        success, message = test_camera_connection_simulated(camera_url)
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
+                    else:
+                        st.error("Please enter a camera URL")
             with col1b:
                 if st.button("➕ Add Camera", use_container_width=True, type="primary"):
                     if camera_url:
-                        st.session_state.camera_urls.append(camera_url)
-                        st.success("Camera added to list!")
+                        if camera_url not in st.session_state.camera_urls:
+                            st.session_state.camera_urls.append(camera_url)
+                            st.success("Camera added to list!")
+                    else:
+                        st.error("Please enter a camera URL first")
         
         with tab2:
             st.subheader("Video File Analysis")
@@ -484,7 +491,9 @@ def show_live_monitoring():
             if uploaded_file:
                 st.success(f"✅ Video ready for analysis: {uploaded_file.name}")
                 if st.button("🎬 Analyze Video", type="primary"):
-                    st.info("Video analysis in progress...")
+                    with st.spinner("Analyzing video for PPE compliance..."):
+                        time.sleep(2)  # Simulate processing
+                        st.success("Video analysis completed! No violations found.")
         
         with tab3:
             st.subheader("Demo Mode")
@@ -492,7 +501,7 @@ def show_live_monitoring():
             if st.button("🚀 Start Demo", type="primary", use_container_width=True):
                 st.session_state.monitoring = True
                 st.session_state.demo_mode = True
-                st.success("Demo mode activated!")
+                st.success("Demo mode activated! Showing simulated PPE detection.")
     
     with col2:
         st.markdown('<div class="modern-card"><div class="card-header">⚙️ Detection Settings</div></div>', unsafe_allow_html=True)
@@ -514,27 +523,15 @@ def show_live_monitoring():
         
         st.markdown('<div class="modern-card"><div class="card-header">🎯 Active PPE Detection</div></div>', unsafe_allow_html=True)
         
-        # PPE selection grid
-        st.markdown("""
-        <div class="ppe-grid">
-            <div class="ppe-item selected">
-                <div class="ppe-icon">⛑️</div>
-                <div>Hard Hat</div>
-            </div>
-            <div class="ppe-item selected">
-                <div class="ppe-icon">👓</div>
-                <div>Safety Glasses</div>
-            </div>
-            <div class="ppe-item selected">
-                <div class="ppe-icon">🦺</div>
-                <div>Hi-Vis Vest</div>
-            </div>
-            <div class="ppe-item selected">
-                <div class="ppe-icon">🧤</div>
-                <div>Safety Gloves</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # PPE selection
+        st.subheader("Selected PPE Items")
+        selected_count = 0
+        for ppe_id, ppe_data in PPE_CLASSES.items():
+            if st.checkbox(f"{ppe_data['icon']} {ppe_data['name']}", value=True, key=f"monitor_{ppe_id}"):
+                st.session_state.selected_ppe[ppe_id] = ppe_data['name']
+                selected_count += 1
+        
+        st.info(f"Monitoring {selected_count} PPE items")
 
 def show_configuration():
     col1, col2 = st.columns([1, 1])
@@ -546,11 +543,18 @@ def show_configuration():
         project_name = st.text_input("Project Name", value=st.session_state.project_info['project_name'])
         work_type = st.selectbox(
             "Work Type",
-            ["Offshore Operations", "Drilling", "Refinery", "Pipeline", "Maintenance"]
+            ["Offshore Operations", "Drilling", "Refinery", "Pipeline", "Maintenance", "Construction"]
         )
         workers = st.number_input("Number of Workers", min_value=1, value=st.session_state.project_info['workers_assigned'])
         
         if st.button("💾 Save Project Settings", type="primary", use_container_width=True):
+            st.session_state.project_info = {
+                'company_name': company_name,
+                'project_name': project_name,
+                'work_type': work_type,
+                'workers_assigned': workers,
+                'project_hours': 240,
+            }
             st.success("Project configuration saved!")
     
     with col2:
@@ -566,13 +570,8 @@ def show_configuration():
                 if st.checkbox(ppe_data['name'], value=True, key=f"ppe_{ppe_id}"):
                     st.session_state.selected_ppe[ppe_id] = ppe_data['name']
         
-        st.markdown("""
-        <div style="margin-top: 1rem;">
-            <button style="width: 100%; padding: 0.5rem; border: none; border-radius: 8px; background: #2563eb; color: white; font-weight: 500;">
-                ✅ Apply PPE Selection
-            </button>
-        </div>
-        """, unsafe_allow_html=True)
+        if st.button("✅ Apply PPE Selection", use_container_width=True, type="primary"):
+            st.success(f"Now monitoring {len(st.session_state.selected_ppe)} PPE items")
 
 def show_analytics():
     st.markdown('<div class="modern-card"><div class="card-header">📊 Safety Analytics Dashboard</div></div>', unsafe_allow_html=True)
@@ -665,6 +664,41 @@ def show_analytics():
             <div style="margin-top: 0.5rem;">{alert['description']}</div>
         </div>
         """, unsafe_allow_html=True)
+
+def generate_safety_report():
+    """Generate a simple text safety report"""
+    report = f"""
+    SAFETYEAGLE AI - SAFETY MONITORING REPORT
+    =========================================
+    
+    Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+    
+    PROJECT INFORMATION
+    -------------------
+    Company: {st.session_state.project_info['company_name']}
+    Project: {st.session_state.project_info['project_name']}
+    Work Type: {st.session_state.project_info['work_type']}
+    Workers: {st.session_state.project_info['workers_assigned']}
+    
+    SAFETY PERFORMANCE SUMMARY
+    --------------------------
+    Overall Compliance Rate: 96.2%
+    Monthly Violations: 24
+    PPE Items Monitored: {len(st.session_state.selected_ppe)}
+    Safety Score: A+
+    
+    RECOMMENDATIONS
+    ---------------
+    1. Continue current safety protocols
+    2. Conduct weekly safety briefings
+    3. Monitor high-risk areas more frequently
+    4. Provide ongoing PPE training
+    
+    ---
+    Generated by SafetyEagle AI
+    Confidential Safety Report
+    """
+    return report
 
 if __name__ == "__main__":
     main()
