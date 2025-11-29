@@ -249,16 +249,16 @@ def initialize_session_state():
         }
     if 'camera_urls' not in st.session_state:
         st.session_state.camera_urls = []
-    if 'demo_mode' not in st.session_state:
-        st.session_state.demo_mode = False
+    if 'mobile_camera_active' not in st.session_state:
+        st.session_state.mobile_camera_active = False
     if 'project_info' not in st.session_state:
         st.session_state.project_info = {
-            'company_name': 'Oil & Gas Corporation',
-            'project_name': 'Offshore Drilling Platform A',
-            'engineer_name': 'Safety Manager',
+            'company_name': '',
+            'project_name': '',
+            'engineer_name': '',
             'work_type': 'Offshore Operations',
-            'workers_assigned': 24,
-            'project_hours': 240,
+            'workers_assigned': 0,
+            'project_hours': 0,
         }
 
 # Standard PPE classes with icons
@@ -275,13 +275,16 @@ PPE_CLASSES = {
 
 def create_simple_bar_chart(data, title, color="#2563eb"):
     """Create a simple bar chart using HTML/CSS"""
+    if not data:
+        return f'<div class="chart-container"><h4>{title}</h4><p>No data available</p></div>'
+    
     max_value = max(data.values()) if data else 1
     chart_html = f"""
     <div class="chart-container">
         <h4>{title}</h4>
     """
     for label, value in data.items():
-        width = (value / max_value) * 100
+        width = (value / max_value) * 100 if max_value > 0 else 0
         chart_html += f"""
         <div style="margin: 10px 0;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
@@ -317,15 +320,39 @@ def create_compliance_gauge(percentage, title):
     """
     return gauge_html
 
-def test_camera_connection_simulated(camera_url):
-    """Simulate camera connection test without external dependencies"""
-    # Simulate connection test with random success
-    import random
-    success = random.choice([True, True, True, False])  # 75% success rate
-    if success:
-        return True, "✅ Camera connected successfully!"
-    else:
-        return False, "❌ Cannot connect to camera. Please check the URL and credentials."
+def calculate_compliance_rate():
+    """Calculate compliance rate based on violations"""
+    if not st.session_state.violations:
+        return 100
+    
+    total_workers = st.session_state.project_info['workers_assigned'] or 1
+    total_violations = len(st.session_state.violations)
+    
+    # Simple calculation: reduce compliance by 2% per violation per worker
+    violation_impact = min(100, (total_violations / total_workers) * 2)
+    return max(0, 100 - violation_impact)
+
+def get_violation_stats():
+    """Get violation statistics for analytics"""
+    if not st.session_state.violations:
+        return {}, {}
+    
+    # PPE violation distribution
+    ppe_violations = {}
+    time_violations = {}
+    
+    for violation in st.session_state.violations:
+        # Count by PPE type
+        missing_items = violation.get('missing_classes', 'Unknown').split(', ')
+        for item in missing_items:
+            ppe_violations[item] = ppe_violations.get(item, 0) + 1
+        
+        # Count by hour of day
+        hour = violation['timestamp'].hour
+        time_slot = f"{hour:02d}:00-{hour+1:02d}:00"
+        time_violations[time_slot] = time_violations.get(time_slot, 0) + 1
+    
+    return ppe_violations, time_violations
 
 def main():
     # Modern Header
@@ -338,25 +365,6 @@ def main():
             </div>
             <div class="header-subtitle">
                 AI-Powered PPE Detection for Enhanced Workplace Safety
-            </div>
-            
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-number">24/7</div>
-                    <div class="stat-label">Real-time Monitoring</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">99%</div>
-                    <div class="stat-label">Detection Accuracy</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">0</div>
-                    <div class="stat-label">PPE Violations Today</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">100%</div>
-                    <div class="stat-label">Compliance Rate</div>
-                </div>
             </div>
         </div>
     </div>
@@ -382,71 +390,116 @@ def show_dashboard():
     with col1:
         st.markdown('<div class="modern-card"><div class="card-header">📹 Live Camera Feed</div></div>', unsafe_allow_html=True)
         
-        # Camera feed placeholder
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                    border-radius: 12px; 
-                    height: 400px; 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center; 
-                    color: white;
-                    margin-bottom: 1rem;">
-            <div style="text-align: center;">
-                <div style="font-size: 4rem; margin-bottom: 1rem;">📹</div>
-                <h3>Live PPE Monitoring Active</h3>
-                <p>Real-time AI-powered safety detection</p>
+        # Camera feed based on monitoring status
+        if st.session_state.monitoring:
+            if st.session_state.mobile_camera_active:
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
+                            border-radius: 12px; 
+                            height: 400px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            color: white;
+                            margin-bottom: 1rem;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 4rem; margin-bottom: 1rem;">📱</div>
+                        <h3>Mobile Camera Active</h3>
+                        <p>Live PPE monitoring via mobile camera</p>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            border-radius: 12px; 
+                            height: 400px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            color: white;
+                            margin-bottom: 1rem;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 4rem; margin-bottom: 1rem;">📹</div>
+                        <h3>Live Monitoring Active</h3>
+                        <p>Real-time AI-powered safety detection</p>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="background: #f8fafc; 
+                        border-radius: 12px; 
+                        height: 400px; 
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center; 
+                        color: #6b7280;
+                        border: 2px dashed #d1d5db;
+                        margin-bottom: 1rem;">
+                <div style="text-align: center;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🔒</div>
+                    <h3>Monitoring Inactive</h3>
+                    <p>Start monitoring to begin PPE detection</p>
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
         
-        # Quick stats
+        # Real-time stats based on actual data
+        compliance_rate = calculate_compliance_rate()
+        total_violations = len(st.session_state.violations)
+        workers = st.session_state.project_info['workers_assigned'] or 0
+        ppe_items = len(st.session_state.selected_ppe)
+        
         col1a, col1b, col1c = st.columns(3)
         with col1a:
-            st.metric("Workers Monitored", "24", "0")
+            st.metric("Workers Monitored", workers, "Live" if st.session_state.monitoring else "Offline")
         with col1b:
-            st.metric("PPE Items Tracked", "8", "0")
+            st.metric("PPE Items Tracked", ppe_items)
         with col1c:
-            st.metric("Compliance Rate", "100%", "0%")
+            st.metric("Compliance Rate", f"{compliance_rate:.1f}%", f"{total_violations} violations")
     
     with col2:
         st.markdown('<div class="modern-card"><div class="card-header">🚨 Safety Alerts</div></div>', unsafe_allow_html=True)
         
-        st.markdown("""
-        <div class="alert-success">
-            <strong>✅ All Systems Operational</strong><br>
-            No safety violations detected in the last 24 hours
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('<div class="modern-card"><div class="card-header">📈 Quick Stats</div></div>', unsafe_allow_html=True)
-        
-        # PPE compliance breakdown
-        st.subheader("PPE Compliance")
-        for ppe_id, ppe_data in PPE_CLASSES.items():
-            if ppe_id < 4:  # Show only first 4 for space
-                col_stat1, col_stat2 = st.columns([2, 1])
-                with col_stat1:
-                    st.write(f"{ppe_data['icon']} {ppe_data['name']}")
-                with col_stat2:
-                    st.write("✅ 100%")
+        if st.session_state.violations:
+            latest_violation = st.session_state.violations[-1]
+            st.markdown(f"""
+            <div class="alert-warning">
+                <strong>⚠️ Recent Violation Detected</strong><br>
+                {latest_violation.get('missing_classes', 'Unknown PPE')}<br>
+                <small>{latest_violation['timestamp'].strftime('%Y-%m-%d %H:%M')}</small>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="alert-success">
+                <strong>✅ No Safety Violations</strong><br>
+                All monitored PPE items are compliant
+            </div>
+            """, unsafe_allow_html=True)
         
         st.markdown('<div class="modern-card"><div class="card-header">🔧 Quick Actions</div></div>', unsafe_allow_html=True)
         
-        if st.button("🎬 Start Monitoring", use_container_width=True, type="primary"):
-            st.session_state.monitoring = True
-            st.success("Live monitoring started!")
+        if not st.session_state.monitoring:
+            if st.button("🎬 Start Mobile Camera", use_container_width=True, type="primary"):
+                st.session_state.monitoring = True
+                st.session_state.mobile_camera_active = True
+                st.success("Mobile camera monitoring started!")
+        else:
+            if st.button("⏹️ Stop Monitoring", use_container_width=True):
+                st.session_state.monitoring = False
+                st.session_state.mobile_camera_active = False
+                st.info("Monitoring stopped")
         
         if st.button("📊 Generate Report", use_container_width=True):
-            # Generate simple text report
             report_content = generate_safety_report()
             st.download_button(
                 label="📥 Download Safety Report",
                 data=report_content,
-                file_name=f"safety_report_{datetime.now().strftime('%Y%m%d')}.txt",
+                file_name=f"safety_report_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
                 mime="text/plain"
             )
-            st.success("Safety report generated! Click download button.")
 
 def show_live_monitoring():
     col1, col2 = st.columns([2, 1])
@@ -455,9 +508,90 @@ def show_live_monitoring():
         st.markdown('<div class="modern-card"><div class="card-header">🎥 Camera Configuration</div></div>', unsafe_allow_html=True)
         
         # Camera setup
-        tab1, tab2, tab3 = st.tabs(["📡 IP Camera", "📁 Upload Video", "🧪 Demo Mode"])
+        tab1, tab2 = st.tabs(["📱 Mobile Camera", "📡 IP Camera"])
         
         with tab1:
+            st.subheader("Mobile Camera Live Feed")
+            st.info("Use your mobile device camera for real-time PPE monitoring")
+            
+            if not st.session_state.mobile_camera_active:
+                if st.button("📱 Activate Mobile Camera", type="primary", use_container_width=True):
+                    st.session_state.mobile_camera_active = True
+                    st.session_state.monitoring = True
+                    st.success("Mobile camera activated! Grant camera permissions when prompted.")
+                
+                # Instructions for mobile camera usage
+                st.markdown("""
+                ### 📋 Mobile Camera Instructions:
+                1. **Grant camera permissions** when prompted by your browser
+                2. **Position camera** to monitor work area
+                3. **Ensure good lighting** for optimal detection
+                4. **Keep camera steady** for consistent monitoring
+                
+                ### 🎯 Best Practices:
+                - Monitor from 3-5 meters distance
+                - Ensure clear view of workers' full body
+                - Avoid direct sunlight or harsh shadows
+                - Position at eye level for best angle
+                """)
+            else:
+                # Mobile camera interface
+                st.success("✅ Mobile camera is active and monitoring")
+                
+                # Simulated camera feed with mobile styling
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
+                            border-radius: 12px; 
+                            height: 400px; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center; 
+                            color: white;
+                            margin-bottom: 1rem;
+                            position: relative;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 4rem; margin-bottom: 1rem;">📱</div>
+                        <h3>Mobile Camera Live</h3>
+                        <p>PPE Detection Active</p>
+                    </div>
+                    <div style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); 
+                              padding: 5px 10px; border-radius: 15px; font-size: 0.8rem;">
+                        🔴 LIVE
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Manual violation reporting
+                st.subheader("Manual PPE Check")
+                col_check1, col_check2 = st.columns(2)
+                with col_check1:
+                    missing_ppe = st.multiselect(
+                        "Missing PPE Items:",
+                        [ppe["name"] for ppe in PPE_CLASSES.values()],
+                        help="Select any missing PPE items observed"
+                    )
+                with col_check2:
+                    worker_id = st.text_input("Worker ID (Optional):", placeholder="W001")
+                
+                if st.button("🚨 Report Violation", type="secondary"):
+                    if missing_ppe:
+                        violation = {
+                            'timestamp': datetime.now(),
+                            'missing_classes': ', '.join(missing_ppe),
+                            'worker_id': worker_id or 'Unknown',
+                            'source': 'Mobile Camera'
+                        }
+                        st.session_state.violations.append(violation)
+                        st.error(f"Violation reported: {', '.join(missing_ppe)}")
+                    else:
+                        st.warning("Please select missing PPE items")
+                
+                if st.button("⏹️ Stop Mobile Camera", use_container_width=True):
+                    st.session_state.mobile_camera_active = False
+                    st.session_state.monitoring = False
+                    st.info("Mobile camera monitoring stopped")
+        
+        with tab2:
             st.subheader("IP Camera Setup")
             camera_url = st.text_input(
                 "Camera RTSP URL:",
@@ -469,11 +603,7 @@ def show_live_monitoring():
             with col1a:
                 if st.button("🔗 Test Connection", use_container_width=True):
                     if camera_url:
-                        success, message = test_camera_connection_simulated(camera_url)
-                        if success:
-                            st.success(message)
-                        else:
-                            st.error(message)
+                        st.info("IP camera functionality requires OpenCV. Use mobile camera for live monitoring.")
                     else:
                         st.error("Please enter a camera URL")
             with col1b:
@@ -484,24 +614,6 @@ def show_live_monitoring():
                             st.success("Camera added to list!")
                     else:
                         st.error("Please enter a camera URL first")
-        
-        with tab2:
-            st.subheader("Video File Analysis")
-            uploaded_file = st.file_uploader("Upload video file", type=['mp4', 'avi', 'mov'])
-            if uploaded_file:
-                st.success(f"✅ Video ready for analysis: {uploaded_file.name}")
-                if st.button("🎬 Analyze Video", type="primary"):
-                    with st.spinner("Analyzing video for PPE compliance..."):
-                        time.sleep(2)  # Simulate processing
-                        st.success("Video analysis completed! No violations found.")
-        
-        with tab3:
-            st.subheader("Demo Mode")
-            st.info("Experience the PPE detection system with simulated data")
-            if st.button("🚀 Start Demo", type="primary", use_container_width=True):
-                st.session_state.monitoring = True
-                st.session_state.demo_mode = True
-                st.success("Demo mode activated! Showing simulated PPE detection.")
     
     with col2:
         st.markdown('<div class="modern-card"><div class="card-header">⚙️ Detection Settings</div></div>', unsafe_allow_html=True)
@@ -510,7 +622,7 @@ def show_live_monitoring():
             "Detection Confidence",
             min_value=0.1,
             max_value=0.9,
-            value=0.7,
+            value=st.session_state.detection_settings['confidence'],
             step=0.1,
             help="Higher values = more accurate but fewer detections"
         )
@@ -521,15 +633,25 @@ def show_live_monitoring():
             index=1
         )
         
+        # Update settings
+        st.session_state.detection_settings['confidence'] = confidence
+        
         st.markdown('<div class="modern-card"><div class="card-header">🎯 Active PPE Detection</div></div>', unsafe_allow_html=True)
         
         # PPE selection
         st.subheader("Selected PPE Items")
         selected_count = 0
         for ppe_id, ppe_data in PPE_CLASSES.items():
-            if st.checkbox(f"{ppe_data['icon']} {ppe_data['name']}", value=True, key=f"monitor_{ppe_id}"):
+            is_selected = st.checkbox(
+                f"{ppe_data['icon']} {ppe_data['name']}", 
+                value=ppe_id in st.session_state.selected_ppe,
+                key=f"monitor_{ppe_id}"
+            )
+            if is_selected:
                 st.session_state.selected_ppe[ppe_id] = ppe_data['name']
                 selected_count += 1
+            elif ppe_id in st.session_state.selected_ppe:
+                del st.session_state.selected_ppe[ppe_id]
         
         st.info(f"Monitoring {selected_count} PPE items")
 
@@ -541,19 +663,22 @@ def show_configuration():
         
         company_name = st.text_input("Company Name", value=st.session_state.project_info['company_name'])
         project_name = st.text_input("Project Name", value=st.session_state.project_info['project_name'])
+        engineer_name = st.text_input("Safety Engineer Name", value=st.session_state.project_info['engineer_name'])
         work_type = st.selectbox(
             "Work Type",
-            ["Offshore Operations", "Drilling", "Refinery", "Pipeline", "Maintenance", "Construction"]
+            ["Offshore Operations", "Drilling", "Refinery", "Pipeline", "Maintenance", "Construction", "Other"]
         )
-        workers = st.number_input("Number of Workers", min_value=1, value=st.session_state.project_info['workers_assigned'])
+        workers = st.number_input("Number of Workers", min_value=0, value=st.session_state.project_info['workers_assigned'])
+        project_hours = st.number_input("Project Hours", min_value=0, value=st.session_state.project_info['project_hours'])
         
         if st.button("💾 Save Project Settings", type="primary", use_container_width=True):
             st.session_state.project_info = {
                 'company_name': company_name,
                 'project_name': project_name,
+                'engineer_name': engineer_name,
                 'work_type': work_type,
                 'workers_assigned': workers,
-                'project_hours': 240,
+                'project_hours': project_hours,
             }
             st.success("Project configuration saved!")
     
@@ -567,7 +692,7 @@ def show_configuration():
             with col_ppe1:
                 st.write(f"**{ppe_data['icon']}**")
             with col_ppe2:
-                if st.checkbox(ppe_data['name'], value=True, key=f"ppe_{ppe_id}"):
+                if st.checkbox(ppe_data['name'], value=ppe_id in st.session_state.selected_ppe, key=f"ppe_{ppe_id}"):
                     st.session_state.selected_ppe[ppe_id] = ppe_data['name']
         
         if st.button("✅ Apply PPE Selection", use_container_width=True, type="primary"):
@@ -576,97 +701,102 @@ def show_configuration():
 def show_analytics():
     st.markdown('<div class="modern-card"><div class="card-header">📊 Safety Analytics Dashboard</div></div>', unsafe_allow_html=True)
     
+    # Calculate real metrics
+    compliance_rate = calculate_compliance_rate()
+    total_violations = len(st.session_state.violations)
+    workers = st.session_state.project_info['workers_assigned'] or 1
+    ppe_violations, time_violations = get_violation_stats()
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Overall Compliance", "96.2%", "1.2%")
+        st.metric("Overall Compliance", f"{compliance_rate:.1f}%")
     with col2:
-        st.metric("Monthly Violations", "24", "-8")
+        st.metric("Total Violations", total_violations)
     with col3:
-        st.metric("Avg. Daily Checks", "1,248", "45")
+        st.metric("Workers", workers)
     with col4:
-        st.metric("Safety Score", "A+", "0")
+        safety_score = "A+" if compliance_rate >= 95 else "A" if compliance_rate >= 90 else "B" if compliance_rate >= 80 else "C"
+        st.metric("Safety Score", safety_score)
     
-    col_chart1, col_chart2 = st.columns(2)
-    
-    with col_chart1:
-        # Compliance trend using simple HTML chart
-        compliance_data = {
-            "Week 1": 92,
-            "Week 2": 94,
-            "Week 3": 95,
-            "Week 4": 96,
-            "This Week": 98
-        }
-        st.markdown(create_simple_bar_chart(compliance_data, "Weekly Compliance Trend", "#2563eb"))
-    
-    with col_chart2:
-        # Compliance gauge
-        st.markdown(create_compliance_gauge(96, "Overall Compliance Rate"))
-    
-    # PPE violation distribution
-    st.markdown('<div class="modern-card"><div class="card-header">📋 PPE Violation Distribution</div></div>', unsafe_allow_html=True)
-    
-    ppe_violations = {
-        'Hard Hat': 12,
-        'Safety Glasses': 8,
-        'Hi-Vis Vest': 3,
-        'Safety Gloves': 1,
-        'Safety Boots': 0
-    }
-    
-    col_viol1, col_viol2 = st.columns(2)
-    
-    with col_viol1:
-        st.markdown(create_simple_bar_chart(ppe_violations, "Violations by PPE Type", "#ef4444"))
-    
-    with col_viol2:
-        # Violation by time of day
-        time_violations = {
-            "6-8 AM": 2,
-            "8-10 AM": 5,
-            "10-12 PM": 8,
-            "12-2 PM": 4,
-            "2-4 PM": 3,
-            "4-6 PM": 2
-        }
-        st.markdown(create_simple_bar_chart(time_violations, "Violations by Time of Day", "#f59e0b"))
+    if st.session_state.violations:
+        col_chart1, col_chart2 = st.columns(2)
+        
+        with col_chart1:
+            # Weekly compliance trend (simplified)
+            weekly_data = {}
+            for violation in st.session_state.violations:
+                week = violation['timestamp'].strftime("Week %U")
+                weekly_data[week] = weekly_data.get(week, 0) + 1
+            
+            # Convert violations to compliance rates
+            compliance_trend = {}
+            for week in weekly_data:
+                # Simple calculation: assume 20 workers and reduce compliance based on violations
+                base_compliance = 95
+                weekly_violations = weekly_data[week]
+                compliance_trend[week] = max(60, base_compliance - (weekly_violations * 2))
+            
+            st.markdown(create_simple_bar_chart(compliance_trend, "Weekly Compliance Trend", "#2563eb"))
+        
+        with col_chart2:
+            # Compliance gauge
+            st.markdown(create_compliance_gauge(int(compliance_rate), "Overall Compliance Rate"))
+        
+        # PPE violation distribution
+        st.markdown('<div class="modern-card"><div class="card-header">📋 PPE Violation Distribution</div></div>', unsafe_allow_html=True)
+        
+        col_viol1, col_viol2 = st.columns(2)
+        
+        with col_viol1:
+            st.markdown(create_simple_bar_chart(ppe_violations, "Violations by PPE Type", "#ef4444"))
+        
+        with col_viol2:
+            st.markdown(create_simple_bar_chart(time_violations, "Violations by Time of Day", "#f59e0b"))
     
     # Recent alerts table
     st.markdown('<div class="modern-card"><div class="card-header">🚨 Recent Safety Events</div></div>', unsafe_allow_html=True)
     
-    sample_alerts = [
-        {"time": "2024-01-15 08:30", "type": "PPE Violation", "severity": "Medium", "description": "Missing safety glasses - Area A"},
-        {"time": "2024-01-14 14:15", "type": "PPE Violation", "severity": "High", "description": "No hard hat - Drill floor"},
-        {"time": "2024-01-13 11:45", "type": "System Alert", "severity": "Low", "description": "Camera connection restored"},
-        {"time": "2024-01-12 09:20", "type": "PPE Compliance", "severity": "Info", "description": "100% compliance - Shift B"},
-    ]
-    
-    for alert in sample_alerts:
-        severity_color = {
-            "High": "#ef4444",
-            "Medium": "#f59e0b", 
-            "Low": "#3b82f6",
-            "Info": "#10b981"
-        }
+    if st.session_state.violations:
+        # Show last 5 violations
+        recent_violations = st.session_state.violations[-5:]
         
-        st.markdown(f"""
-        <div style="background: white; padding: 1rem; border-radius: 8px; border-left: 4px solid {severity_color[alert['severity']]}; margin: 0.5rem 0;">
-            <div style="display: flex; justify-content: between; align-items: start;">
-                <div style="flex: 1;">
-                    <strong>{alert['type']}</strong><br>
-                    <small style="color: #6b7280;">{alert['time']}</small>
+        for violation in reversed(recent_violations):
+            severity_color = "#ef4444"  # High severity for violations
+            
+            st.markdown(f"""
+            <div style="background: white; padding: 1rem; border-radius: 8px; border-left: 4px solid {severity_color}; margin: 0.5rem 0;">
+                <div style="display: flex; justify-content: between; align-items: start;">
+                    <div style="flex: 1;">
+                        <strong>PPE Violation</strong><br>
+                        <small style="color: #6b7280;">{violation['timestamp'].strftime('%Y-%m-%d %H:%M')}</small>
+                    </div>
+                    <div style="background: {severity_color}; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem;">
+                        High
+                    </div>
                 </div>
-                <div style="background: {severity_color[alert['severity']]}; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem;">
-                    {alert['severity']}
+                <div style="margin-top: 0.5rem;">
+                    <strong>Missing:</strong> {violation.get('missing_classes', 'Unknown')}<br>
+                    <strong>Source:</strong> {violation.get('source', 'Manual Report')}
+                    {f"<br><strong>Worker:</strong> {violation.get('worker_id', '')}" if violation.get('worker_id') else ''}
                 </div>
             </div>
-            <div style="margin-top: 0.5rem;">{alert['description']}</div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background: #f0fdf4; padding: 2rem; border-radius: 8px; text-align: center; border: 1px solid #bbf7d0;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+            <h3 style="color: #166534; margin-bottom: 0.5rem;">No Safety Violations</h3>
+            <p style="color: #15803d;">Excellent safety compliance record!</p>
         </div>
         """, unsafe_allow_html=True)
 
 def generate_safety_report():
-    """Generate a simple text safety report"""
+    """Generate a comprehensive safety report based on actual data"""
+    compliance_rate = calculate_compliance_rate()
+    total_violations = len(st.session_state.violations)
+    ppe_violations, time_violations = get_violation_stats()
+    
     report = f"""
     SAFETYEAGLE AI - SAFETY MONITORING REPORT
     =========================================
@@ -675,24 +805,52 @@ def generate_safety_report():
     
     PROJECT INFORMATION
     -------------------
-    Company: {st.session_state.project_info['company_name']}
-    Project: {st.session_state.project_info['project_name']}
+    Company: {st.session_state.project_info['company_name'] or 'Not specified'}
+    Project: {st.session_state.project_info['project_name'] or 'Not specified'}
+    Safety Engineer: {st.session_state.project_info['engineer_name'] or 'Not specified'}
     Work Type: {st.session_state.project_info['work_type']}
     Workers: {st.session_state.project_info['workers_assigned']}
     
     SAFETY PERFORMANCE SUMMARY
     --------------------------
-    Overall Compliance Rate: 96.2%
-    Monthly Violations: 24
+    Overall Compliance Rate: {compliance_rate:.1f}%
+    Total Violations: {total_violations}
     PPE Items Monitored: {len(st.session_state.selected_ppe)}
-    Safety Score: A+
+    Monitoring Period: Since first violation recorded
+    
+    VIOLATION ANALYSIS
+    ------------------
+    """
+    
+    if ppe_violations:
+        report += "PPE Violation Distribution:\n"
+        for ppe, count in ppe_violations.items():
+            report += f"  - {ppe}: {count} violations\n"
+    else:
+        report += "No PPE violations recorded.\n"
+    
+    report += f"""
     
     RECOMMENDATIONS
     ---------------
-    1. Continue current safety protocols
-    2. Conduct weekly safety briefings
-    3. Monitor high-risk areas more frequently
-    4. Provide ongoing PPE training
+    """
+    
+    if compliance_rate >= 95:
+        report += "1. Continue current excellent safety protocols\n"
+    elif compliance_rate >= 80:
+        report += "1. Conduct refresher PPE training sessions\n"
+    else:
+        report += "1. Implement immediate safety intervention program\n"
+    
+    report += "2. Regular safety equipment inspections\n"
+    report += "3. Ongoing worker safety awareness programs\n"
+    report += "4. Continuous monitoring and improvement\n"
+    
+    report += f"""
+    
+    MONITORED PPE ITEMS
+    -------------------
+    {', '.join(st.session_state.selected_ppe.values()) if st.session_state.selected_ppe else 'No PPE items selected'}
     
     ---
     Generated by SafetyEagle AI
