@@ -6,9 +6,6 @@ import time
 import os
 from pathlib import Path
 import tempfile
-from PIL import Image
-import plotly.express as px
-import plotly.graph_objects as go
 import io
 import requests
 import re
@@ -235,6 +232,16 @@ st.markdown("""
         margin: 1rem 0;
     }
     
+    /* Chart containers */
+    .chart-container {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border: 1px solid #e5e7eb;
+        margin-bottom: 1rem;
+    }
+    
     /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -287,6 +294,50 @@ PPE_CLASSES = {
     6: {"name": "Face Shield", "icon": "🛡️", "description": "Face Protection"},
     7: {"name": "Respirator", "icon": "😷", "description": "Respiratory Protection"},
 }
+
+def create_simple_bar_chart(data, title, color="#2563eb"):
+    """Create a simple bar chart using HTML/CSS"""
+    max_value = max(data.values()) if data else 1
+    chart_html = f"""
+    <div class="chart-container">
+        <h4>{title}</h4>
+    """
+    for label, value in data.items():
+        width = (value / max_value) * 100
+        chart_html += f"""
+        <div style="margin: 10px 0;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span>{label}</span>
+                <span style="font-weight: bold;">{value}</span>
+            </div>
+            <div style="background: #e5e7eb; border-radius: 10px; height: 20px;">
+                <div style="background: {color}; border-radius: 10px; height: 20px; width: {width}%; 
+                          transition: width 0.3s ease;"></div>
+            </div>
+        </div>
+        """
+    chart_html += "</div>"
+    return chart_html
+
+def create_compliance_gauge(percentage, title):
+    """Create a simple gauge chart using HTML/CSS"""
+    color = "#22c55e" if percentage >= 90 else "#f59e0b" if percentage >= 80 else "#ef4444"
+    
+    gauge_html = f"""
+    <div class="chart-container" style="text-align: center;">
+        <h4>{title}</h4>
+        <div style="position: relative; width: 150px; height: 150px; margin: 0 auto;">
+            <div style="position: absolute; top: 0; left: 0; width: 150px; height: 150px; 
+                      border-radius: 50%; background: conic-gradient({color} 0% {percentage}%, #e5e7eb {percentage}% 100%);">
+            </div>
+            <div style="position: absolute; top: 15px; left: 15px; width: 120px; height: 120px; 
+                      border-radius: 50%; background: white; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 2rem; font-weight: bold; color: {color};">{percentage}%</span>
+            </div>
+        </div>
+    </div>
+    """
+    return gauge_html
 
 def main():
     # Modern Header
@@ -526,14 +577,6 @@ def show_configuration():
 def show_analytics():
     st.markdown('<div class="modern-card"><div class="card-header">📊 Safety Analytics Dashboard</div></div>', unsafe_allow_html=True)
     
-    # Generate sample data for demonstration
-    dates = pd.date_range(start='2024-01-01', end='2024-01-30', freq='D')
-    compliance_data = pd.DataFrame({
-        'date': dates,
-        'compliance_rate': np.random.normal(95, 3, len(dates)),
-        'violations': np.random.poisson(2, len(dates))
-    })
-    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -548,26 +591,47 @@ def show_analytics():
     col_chart1, col_chart2 = st.columns(2)
     
     with col_chart1:
-        st.subheader("Compliance Trend")
-        fig = px.line(compliance_data, x='date', y='compliance_rate',
-                     title="30-Day Compliance Trend",
-                     labels={'compliance_rate': 'Compliance Rate %', 'date': 'Date'})
-        fig.update_traces(line_color='#2563eb', line_width=3)
-        st.plotly_chart(fig, use_container_width=True)
+        # Compliance trend using simple HTML chart
+        compliance_data = {
+            "Week 1": 92,
+            "Week 2": 94,
+            "Week 3": 95,
+            "Week 4": 96,
+            "This Week": 98
+        }
+        st.markdown(create_simple_bar_chart(compliance_data, "Weekly Compliance Trend", "#2563eb"))
     
     with col_chart2:
-        st.subheader("PPE Violation Distribution")
-        ppe_violations = {
-            'Hard Hat': 12,
-            'Safety Glasses': 8,
-            'Hi-Vis Vest': 3,
-            'Safety Gloves': 1,
-            'Safety Boots': 0
+        # Compliance gauge
+        st.markdown(create_compliance_gauge(96, "Overall Compliance Rate"))
+    
+    # PPE violation distribution
+    st.markdown('<div class="modern-card"><div class="card-header">📋 PPE Violation Distribution</div></div>', unsafe_allow_html=True)
+    
+    ppe_violations = {
+        'Hard Hat': 12,
+        'Safety Glasses': 8,
+        'Hi-Vis Vest': 3,
+        'Safety Gloves': 1,
+        'Safety Boots': 0
+    }
+    
+    col_viol1, col_viol2 = st.columns(2)
+    
+    with col_viol1:
+        st.markdown(create_simple_bar_chart(ppe_violations, "Violations by PPE Type", "#ef4444"))
+    
+    with col_viol2:
+        # Violation by time of day
+        time_violations = {
+            "6-8 AM": 2,
+            "8-10 AM": 5,
+            "10-12 PM": 8,
+            "12-2 PM": 4,
+            "2-4 PM": 3,
+            "4-6 PM": 2
         }
-        fig = px.pie(values=list(ppe_violations.values()), 
-                    names=list(ppe_violations.keys()),
-                    title="Violations by PPE Type")
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown(create_simple_bar_chart(time_violations, "Violations by Time of Day", "#f59e0b"))
     
     # Recent alerts table
     st.markdown('<div class="modern-card"><div class="card-header">🚨 Recent Safety Events</div></div>', unsafe_allow_html=True)
