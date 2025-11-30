@@ -1,76 +1,50 @@
 import streamlit as st
-try:
-    import cv2
-except ImportError:
-    st.error("OpenCV not installed properly")
+import cv2
 import pandas as pd
 import numpy as np
 from ultralytics import YOLO
-import streamlit as st
-import pandas as pd
-import numpy as np
 from datetime import datetime
 import time
 import os
-os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
 from pathlib import Path
 import tempfile
 from PIL import Image
 import plotly.express as px
+import plotly.graph_objects as go
 import io
 import requests
 import re
+import json
 
-# Try to import OpenCV with error handling
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError as e:
-    st.error(f"❌ OpenCV import error: {e}")
-    CV2_AVAILABLE = False
-
-# Try to import Ultralytics with error handling  
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError as e:
-    st.error(f"❌ YOLO import error: {e}")
-    YOLO_AVAILABLE = False
-
-# Set page configuration with SafetyEagle branding
+# Set page configuration with professional theme
 st.set_page_config(
-    page_title="SafetyEagle AI - PPE Monitoring",
-    page_icon="🦅",
+    page_title="PPE Safety Monitor - Oil & Gas",
+    page_icon="⛽",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for SafetyEagle branding
+# Custom CSS for professional styling
 st.markdown("""
 <style>
-    .eagle-header {
-        font-size: 2.8rem;
-        color: #8B4513;
-        background: linear-gradient(135deg, #8B4513 0%, #FF6700 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        font-family: 'Montserrat', sans-serif;
+    .main-header {
+        font-size: 2.5rem;
+        color: #1f77b4;
+        border-bottom: 2px solid #1f77b4;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
     }
-    .eagle-tagline {
-        text-align: center;
-        color: #2F4F4F;
-        font-size: 1.2rem;
-        font-style: italic;
-        margin-bottom: 2rem;
+    .section-header {
+        font-size: 1.5rem;
+        color: #2e86ab;
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
     }
     .metric-card {
         background-color: #f8f9fa;
         padding: 1rem;
         border-radius: 0.5rem;
-        border-left: 4px solid #8B4513;
+        border-left: 4px solid #1f77b4;
         margin-bottom: 1rem;
     }
     .warning-card {
@@ -85,20 +59,15 @@ st.markdown("""
         padding: 1rem;
         border-radius: 0.5rem;
     }
-    .section-header {
-        font-size: 1.5rem;
-        color: #8B4513;
-        border-bottom: 2px solid #8B4513;
-        padding-bottom: 0.5rem;
-        margin-top: 1.5rem;
-        margin-bottom: 1rem;
+    .critical-alert {
+        background-color: #f8d7da;
+        border-left: 4px solid #dc3545;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        animation: blink 1s infinite;
     }
-    .mobile-feature-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        margin: 1rem 0;
+    @keyframes blink {
+        50% { opacity: 0.7; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -114,128 +83,108 @@ if 'selected_ppe' not in st.session_state:
     st.session_state.selected_ppe = {}
 if 'detection_settings' not in st.session_state:
     st.session_state.detection_settings = {
-        'confidence': 0.5,
+        'confidence': 0.6,
         'speed': 'medium',
-        'frame_skip': 3
+        'frame_skip': 2
     }
 if 'camera_urls' not in st.session_state:
     st.session_state.camera_urls = []
-if 'available_classes' not in st.session_state:
-    st.session_state.available_classes = {}
-if 'model_loaded' not in st.session_state:
-    st.session_state.model_loaded = False
-if 'demo_mode' not in st.session_state:
-    st.session_state.demo_mode = False
-if 'mobile_camera_active' not in st.session_state:
-    st.session_state.mobile_camera_active = False
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Live Monitoring"
+if 'projects' not in st.session_state:
+    st.session_state.projects = {}
+if 'current_project' not in st.session_state:
+    st.session_state.current_project = None
+if 'compliance_threshold' not in st.session_state:
+    st.session_state.compliance_threshold = 95.0
 
-# Load model with caching and get all classes
-@st.cache_resource(show_spinner="Loading SafetyEagle AI Model...")
-def load_model_and_classes():
+# Oil & Gas specific PPE configurations
+OIL_GAS_PPE_PRESETS = {
+    "Standard Rig Operation": {
+        "required": ["Hard Hat", "Safety Glasses", "Safety Boots", "FR Clothing", "Safety Gloves"],
+        "optional": ["Hearing Protection", "Face Shield", "Harness"]
+    },
+    "Drilling Operation": {
+        "required": ["Hard Hat", "Face Shield", "FR Clothing", "Safety Boots", "Cut-Resistant Gloves"],
+        "optional": ["Hearing Protection", "Harness", "Respirator"]
+    },
+    "Chemical Handling": {
+        "required": ["Chemical Suit", "Respirator", "Chemical Gloves", "Safety Glasses", "Safety Boots"],
+        "optional": ["Face Shield", "Apron"]
+    },
+    "Confined Space": {
+        "required": ["Harness", "Hard Hat", "Safety Boots", "Headlamp", "Gas Monitor"],
+        "optional": ["Respirator", "Communication Device"]
+    },
+    "Hot Work": {
+        "required": ["FR Clothing", "Face Shield", "Welding Gloves", "Safety Boots", "Hard Hat"],
+        "optional": ["Apron", "Respirator"]
+    },
+    "Custom Project": {
+        "required": [],
+        "optional": []
+    }
+}
+
+# Load model with enhanced caching and error handling
+@st.cache_resource(show_spinner="Loading AI Safety Model...")
+def load_model():
     try:
-        if not YOLO_AVAILABLE:
-            st.error("❌ YOLO not available. Using demo mode.")
-            return None, {}, "demo"
+        model = YOLO(r"D:\runs\detect\train\weights\best.pt")
+        st.success("✅ Safety Model Loaded Successfully!")
+        
+        # Verify model classes
+        if hasattr(model, 'names'):
+            st.info(f"📋 Model can detect {len(model.names)} safety items")
             
-        # Try multiple possible model paths for Streamlit Cloud
-        possible_paths = [
-            "models/best.pt",
-            "best.pt", 
-            "./models/best.pt",
-            "model/best.pt"
-        ]
-        
-        model = None
-        loaded_path = None
-        
-        for model_path in possible_paths:
-            try:
-                if os.path.exists(model_path):
-                    model = YOLO(model_path)
-                    loaded_path = model_path
-                    st.success(f"✅ Model loaded from: {model_path}")
-                    break
-            except Exception as e:
-                st.warning(f"⚠️ Could not load from {model_path}: {e}")
-                continue
-        
-        if model is None:
-            # Fallback to nano model for demo
-            st.warning("⚠️ Local model not found. Using YOLOv8n for demo...")
-            model = YOLO('yolov8n.pt')
-            loaded_path = 'yolov8n.pt'
-            st.session_state.demo_mode = True
-        
-        # Get all available classes from the model
-        if model and hasattr(model, 'names'):
-            available_classes = model.names
-            st.session_state.available_classes = available_classes
-            st.session_state.model_loaded = True
-            return model, available_classes, loaded_path
-        else:
-            st.error("❌ Could not extract class names from model")
-            return None, {}, loaded_path
-            
+        return model
     except Exception as e:
-        st.error(f"❌ Model loading failed: {e}")
-        st.info("🦅 Switching to SafetyEagle Demo Mode...")
-        return None, {}, "demo"
+        st.error(f"❌ Model Loading Failed: {e}")
+        st.info("💡 Please ensure your model file is accessible and in the correct format")
+        return None
 
-def initialize_app():
-    """Initialize the app and load model on startup"""
-    if not st.session_state.model_loaded:
-        with st.spinner("🦅 Initializing SafetyEagle AI System..."):
-            model, available_classes, model_path = load_model_and_classes()
-            st.session_state.model = model
-            st.session_state.available_classes = available_classes
-            st.session_state.model_loaded = True
-            
-            # Auto-select all classes by default
-            if available_classes:
-                st.session_state.selected_ppe = available_classes.copy()
-                st.success(f"✅ Loaded {len(available_classes)} detection classes")
+def get_available_classes(model):
+    """Get available class names from the model"""
+    if model and hasattr(model, 'names'):
+        return model.names
+    return {}
 
 def validate_ip_camera_url(url):
-    """Validate IP camera URL"""
+    """Enhanced IP camera URL validation"""
     if not url:
         return False, "URL cannot be empty"
     
-    # Basic URL validation
+    # Enhanced URL validation for oil & gas environments
     ip_pattern = r'^rtsp://|^http://|^https://'
     if not re.match(ip_pattern, url):
         return False, "URL must start with rtsp://, http://, or https://"
     
-    return True, "URL looks valid"
+    # Security check for common vulnerabilities
+    if '///' in url or '%%' in url:
+        return False, "Invalid URL format detected"
+    
+    return True, "URL validation passed"
 
-def test_ip_camera(url, timeout=5):
-    """Test if IP camera URL is accessible"""
-    if not CV2_AVAILABLE:
-        return False, "OpenCV not available for camera testing"
-        
+def test_ip_camera(url, timeout=8):
+    """Enhanced IP camera testing with better diagnostics"""
     try:
         if url.startswith('rtsp://'):
-            # Test RTSP stream
             cap = cv2.VideoCapture(url)
             if cap.isOpened():
                 ret, frame = cap.read()
                 cap.release()
                 if ret and frame is not None:
-                    return True, "✅ RTSP camera connected successfully!"
+                    return True, f"✅ RTSP camera connected - Resolution: {frame.shape[1]}x{frame.shape[0]}"
                 else:
                     return False, "❌ RTSP camera connected but no frame received"
             else:
-                return False, "❌ Cannot connect to RTSP stream"
+                return False, "❌ Cannot connect to RTSP stream - Check credentials/network"
         
         elif url.startswith(('http://', 'https://')):
-            # Test HTTP stream
             try:
                 response = requests.get(url, timeout=timeout, stream=True)
                 if response.status_code == 200:
-                    return True, "✅ HTTP camera connected successfully!"
+                    return True, "✅ HTTP camera connected successfully"
                 else:
-                    return False, f"❌ HTTP camera returned status code: {response.status_code}"
+                    return False, f"❌ HTTP camera returned status: {response.status_code}"
             except requests.exceptions.RequestException as e:
                 return False, f"❌ HTTP camera connection failed: {e}"
         
@@ -245,652 +194,713 @@ def test_ip_camera(url, timeout=5):
     except Exception as e:
         return False, f"❌ Camera test failed: {e}"
 
-def process_mobile_camera_image(picture):
-    """Process image from mobile camera"""
-    if picture is None:
-        return None
-    
-    try:
-        # Convert to OpenCV format
-        bytes_data = picture.getvalue()
-        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-        
-        if cv2_img is None:
-            st.error("❌ Failed to process camera image")
-            return None
-        
-        return cv2_img
-    except Exception as e:
-        st.error(f"❌ Error processing camera image: {e}")
-        return None
-
-def analyze_single_image(image, image_source="Mobile Camera"):
-    """Analyze a single image for safety compliance"""
-    if not st.session_state.model_loaded:
-        st.error("❌ Model not loaded. Please wait for initialization.")
-        return
-    
-    if not st.session_state.selected_ppe:
-        st.error("❌ No classes selected. Please select classes first.")
-        return
-    
-    confidence = st.session_state.detection_settings.get('confidence', 0.5)
-    selected_classes = list(st.session_state.selected_ppe.keys())
-    speed_params = st.session_state.detection_settings.get('speed_params', {'imgsz': 640, 'half': False})
-    
-    with st.spinner("🔍 Analyzing image for safety compliance..."):
-        try:
-            # Run detection
-            results = st.session_state.model(
-                image, 
-                conf=confidence,
-                classes=selected_classes,
-                verbose=False,
-                **speed_params
-            )
-            
-            # Check for violations
-            violations = check_for_violations(results, selected_classes)
-            annotated_frame = results[0].plot()
-            
-            # Convert back to RGB for display
-            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-            
-            # Display results
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("📸 Original Image")
-                original_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                st.image(original_rgb, caption=f"{image_source} - Original", use_column_width=True)
-            
-            with col2:
-                st.subheader("🎯 Safety Analysis")
-                st.image(annotated_frame_rgb, caption=f"{image_source} - Safety Analysis", use_column_width=True)
-            
-            # Show compliance status
-            if violations:
-                st.error(f"🚨 **SAFETY VIOLATION DETECTED!**")
-                st.warning(f"**Missing Safety Equipment:** {', '.join(violations)}")
-                
-                # Save violation
-                save_violation(image, violations)
-                
-                # Show alert
-                st.markdown("""
-                <div style='background-color: #ffcccc; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #ff0000;'>
-                    <h4 style='color: #cc0000; margin: 0;'>⚠️ IMMEDIATE ACTION REQUIRED</h4>
-                    <p style='margin: 0.5rem 0 0 0;'>Please ensure all required safety equipment is worn before proceeding.</p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.success(f"✅ **SAFETY COMPLIANCE VERIFIED**")
-                st.info(f"All required safety equipment detected: {', '.join(st.session_state.selected_ppe.values())}")
-                
-                # Show success card
-                st.markdown("""
-                <div style='background-color: #ccffcc; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #00cc00;'>
-                    <h4 style='color: #006600; margin: 0;'>✓ SAFETY STANDARDS MET</h4>
-                    <p style='margin: 0.5rem 0 0 0;'>All personnel are properly equipped with required safety gear.</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Show detection details
-            with st.expander("📊 Detection Details"):
-                if results and len(results) > 0:
-                    detected_objects = []
-                    for box in results[0].boxes:
-                        class_id = int(box.cls[0])
-                        confidence = float(box.conf[0])
-                        class_name = st.session_state.available_classes.get(class_id, f"Class {class_id}")
-                        detected_objects.append({
-                            'class': class_name,
-                            'confidence': f"{confidence:.2%}",
-                            'class_id': class_id
-                        })
-                    
-                    if detected_objects:
-                        st.write("**Detected Objects:**")
-                        for obj in detected_objects:
-                            status = "✅" if obj['class_id'] in selected_classes else "ℹ️"
-                            st.write(f"{status} **{obj['class']}** - Confidence: {obj['confidence']}")
-                    else:
-                        st.info("No objects detected in the image")
-                
-        except Exception as e:
-            st.error(f"❌ Analysis failed: {e}")
-
 def main():
-    # SafetyEagle Header
-    st.markdown('<h1 class="eagle-header">🦅 SafetyEagle AI</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="eagle-tagline">Soaring Above Safety Standards</p>', unsafe_allow_html=True)
+    # Professional header with company branding
+    col1, col2, col3 = st.columns([1, 3, 1])
+    with col2:
+        st.markdown('<h1 class="main-header">🛡️ OIL & GAS PPE SAFETY MONITORING SYSTEM</h1>', unsafe_allow_html=True)
     
-    # Initialize app on startup
-    initialize_app()
+    # Status bar
+    show_status_bar()
     
-    # Show system status in sidebar
-    st.sidebar.markdown("### 🦅 SafetyEagle Status")
+    # Sidebar with enhanced navigation
+    st.sidebar.title("🔧 Navigation Panel")
     st.sidebar.markdown("---")
     
-    if not CV2_AVAILABLE:
-        st.sidebar.error("❌ OpenCV Not Available")
-        st.sidebar.info("Using limited functionality mode")
+    page = st.sidebar.radio(
+        "Select Module",
+        ["Project Setup", "Camera Configuration", "Detection Settings", "Live Monitoring", 
+         "Safety Dashboard", "Compliance Reports", "Deployment Guide"]
+    )
     
-    if not YOLO_AVAILABLE:
-        st.sidebar.error("❌ YOLO Not Available")
-        st.sidebar.info("Using demo simulation mode")
-    
-    if st.session_state.model_loaded and st.session_state.available_classes:
-        if st.session_state.demo_mode:
-            st.sidebar.warning("🟡 Demo Mode Active")
-        else:
-            st.sidebar.success("✅ Model Loaded")
-        st.sidebar.info(f"**Available Classes:** {len(st.session_state.available_classes)}")
-        
-        # Show quick class overview
-        with st.sidebar.expander("📋 Quick Class Overview"):
-            for class_id, class_name in list(st.session_state.available_classes.items())[:8]:
-                status = "✅" if class_id in st.session_state.selected_ppe else "❌"
-                st.write(f"{status} **{class_id}:** {class_name}")
-            if len(st.session_state.available_classes) > 8:
-                st.write(f"... and {len(st.session_state.available_classes) - 8} more classes")
-    else:
-        st.sidebar.error("❌ Model Not Loaded")
-        st.sidebar.info("Using simulation mode")
-    
-    # Sidebar navigation
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🧭 Navigation")
-    
-    # Use radio buttons for navigation instead of switch_page
-    page = st.sidebar.radio("Go to", 
-        ["Live Monitoring", "Mobile Camera", "Class Selection", "Camera Setup", "Settings", "Dashboard", "Reports", "Deployment Guide"])
-    
-    # Update current page in session state
-    st.session_state.current_page = page
-    
-    # Show the appropriate page based on selection
-    if page == "Class Selection":
-        show_class_selection()
-    elif page == "Camera Setup":
+    # Display selected page
+    if page == "Project Setup":
+        show_project_setup()
+    elif page == "Camera Configuration":
         show_camera_setup()
-    elif page == "Mobile Camera":
-        show_mobile_camera()
-    elif page == "Settings":
-        show_settings()
+    elif page == "Detection Settings":
+        show_detection_settings()
     elif page == "Live Monitoring":
         show_live_monitoring()
-    elif page == "Dashboard":
-        show_dashboard()
-    elif page == "Reports":
-        show_reports()
+    elif page == "Safety Dashboard":
+        show_safety_dashboard()
+    elif page == "Compliance Reports":
+        show_compliance_reports()
     elif page == "Deployment Guide":
         show_deployment_guide()
 
-def show_mobile_camera():
-    st.markdown('<h2 class="section-header">📱 Mobile Camera Safety Check</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.model_loaded:
-        st.error("❌ Please wait for model initialization on the Class Selection page first.")
-        return
-    
-    if not st.session_state.selected_ppe:
-        st.warning("⚠️ Please select classes to monitor first on the Class Selection page!")
-        return
-    
-    # Mobile feature introduction
-    st.markdown("""
-    <div class='mobile-feature-card'>
-        <h3 style='color: white; margin: 0;'>📱 Instant Safety Checks</h3>
-        <p style='color: white; margin: 0.5rem 0 0 0;'>Use your mobile camera for real-time safety compliance analysis</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.info("""
-    **📱 Mobile Usage Instructions:**
-    1. Allow camera permissions when prompted by your browser
-    2. Point your camera at the person/area to analyze
-    3. Take a photo using the camera button below
-    4. SafetyEagle AI will instantly analyze for compliance
-    """)
-    
-    # Mobile camera input
-    st.subheader("📸 Take Photo with Mobile Camera")
-    
-    picture = st.camera_input(
-        "Point your camera and take a photo for safety analysis",
-        key="mobile_camera",
-        help="On mobile devices, this will use your phone's camera"
-    )
-    
-    if picture is not None:
-        st.session_state.mobile_camera_active = True
-        
-        # Process the camera image
-        image = process_mobile_camera_image(picture)
-        if image is not None:
-            analyze_single_image(image, "Mobile Camera")
-    
-    # Alternative: File upload for mobile
-    st.subheader("📁 Or Upload Existing Photo")
-    
-    uploaded_file = st.file_uploader(
-        "Upload a photo from your device",
-        type=['jpg', 'jpeg', 'png'],
-        help="Select an existing photo from your gallery or camera roll"
-    )
-    
-    if uploaded_file is not None:
-        # Process uploaded image
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        
-        if image is not None:
-            analyze_single_image(image, "Uploaded Image")
-        else:
-            st.error("❌ Failed to process uploaded image")
-    
-    # Quick actions
-    st.subheader("⚡ Quick Actions")
-    col1, col2, col3 = st.columns(3)
+def show_status_bar():
+    """Display professional status bar"""
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        if st.button("🔄 New Safety Check", use_container_width=True):
-            st.session_state.mobile_camera_active = False
-            st.rerun()
+        status = "🟢 ACTIVE" if st.session_state.monitoring else "🔴 INACTIVE"
+        st.metric("Monitoring Status", status)
     
     with col2:
-        if st.button("📊 View Dashboard", use_container_width=True):
-            st.session_state.current_page = "Dashboard"
-            st.rerun()
+        st.metric("Violations Today", len(st.session_state.violations))
     
     with col3:
-        if st.button("⚙️ Settings", use_container_width=True):
-            st.session_state.current_page = "Settings"
-            st.rerun()
+        project = st.session_state.current_project or "No Project"
+        st.metric("Current Project", project[:15] + "..." if len(project) > 15 else project)
+    
+    with col4:
+        ppe_count = len(st.session_state.selected_ppe)
+        st.metric("PPE Items Monitored", ppe_count)
+    
+    with col5:
+        compliance = calculate_compliance_rate()
+        st.metric("Compliance Rate", f"{compliance:.1f}%")
 
-def show_live_monitoring():
-    st.markdown('<h2 class="section-header">📹 Live Safety Monitoring</h2>', unsafe_allow_html=True)
+def calculate_compliance_rate():
+    """Calculate safety compliance rate"""
+    if not st.session_state.violations:
+        return 100.0
     
-    if not st.session_state.model_loaded:
-        st.error("❌ Please wait for model initialization on the Class Selection page first.")
-        return
+    total_checks = len(st.session_state.violations) * 10  # Assuming 10 checks per violation period
+    violations_count = len(st.session_state.violations)
     
-    if not st.session_state.selected_ppe:
-        st.warning("⚠️ Please select classes to monitor first on the Class Selection page!")
-        return
+    if total_checks == 0:
+        return 100.0
     
-    # Display current configuration
+    compliance_rate = ((total_checks - violations_count) / total_checks) * 100
+    return min(compliance_rate, 100.0)
+
+def show_project_setup():
+    st.markdown('<h2 class="section-header">🏗️ Project Safety Configuration</h2>', unsafe_allow_html=True)
+    
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("Monitoring Controls")
+        st.subheader("Project Information")
         
-        # Camera options - updated to include mobile camera
-        camera_mode = st.radio(
-            "Select Input Source:",
-            ["IP Camera", "Mobile Camera", "Test Mode", "Upload Video"],
-            help="Choose your video source"
+        project_name = st.text_input("Project Name", placeholder="e.g., North Sea Platform Maintenance")
+        project_location = st.text_input("Project Location", placeholder="e.g., Platform A, Deck 3")
+        project_supervisor = st.text_input("Safety Supervisor", placeholder="Name of responsible person")
+        
+        st.subheader("PPE Requirement Presets")
+        
+        preset_selection = st.selectbox(
+            "Select Safety Preset",
+            list(OIL_GAS_PPE_PRESETS.keys()),
+            help="Choose predefined safety configurations for different operations"
         )
         
-        # IP Camera selection
-        if camera_mode == "IP Camera":
-            if st.session_state.camera_urls:
-                selected_url = st.selectbox(
-                    "Select Saved Camera:",
-                    st.session_state.camera_urls,
-                    help="Choose from your saved camera URLs"
-                )
-                new_url = st.text_input("Or enter new camera URL:")
-                camera_url = new_url if new_url else selected_url
-            else:
-                camera_url = st.text_input(
-                    "Enter IP Camera URL:",
-                    placeholder="rtsp://username:password@ip:port/stream"
-                )
+        # Display preset details
+        preset = OIL_GAS_PPE_PRESETS[preset_selection]
+        st.info(f"**{preset_selection}:** {', '.join(preset['required'])}")
         
-        # Performance info
-        st.info(f"""
-        **Current Settings:**
-        - Monitoring: {len(st.session_state.selected_ppe)} classes
-        - Confidence: {st.session_state.detection_settings.get('confidence', 0.5)}
-        - Speed: {st.session_state.detection_settings.get('speed', 'medium').title()}
-        - Frame Skip: {st.session_state.detection_settings.get('frame_skip', 3)}
-        """)
+        if preset['optional']:
+            st.info(f"**Recommended:** {', '.join(preset['optional'])}")
+    
+    with col2:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.subheader("Safety Briefing")
+        st.write("✅ Define project-specific PPE requirements")
+        st.write("✅ Configure monitoring parameters")
+        st.write("✅ Set compliance thresholds")
+        st.write("✅ Assign safety responsibilities")
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        # Start buttons
-        if camera_mode == "IP Camera":
-            if camera_url:
-                if st.button("🌐 Start IP Camera", type="primary"):
-                    if CV2_AVAILABLE:
-                        st.session_state.monitoring = True
-                        start_ip_camera_monitoring(camera_url)
-                    else:
-                        st.error("❌ OpenCV not available for camera streaming")
-                
-                if st.button("⏹️ Stop Monitoring"):
-                    st.session_state.monitoring = False
-                    st.rerun()
-            else:
-                st.warning("Please enter an IP camera URL first")
+        # Compliance threshold
+        st.subheader("Compliance Settings")
+        compliance_threshold = st.slider(
+            "Minimum Compliance Rate (%)",
+            min_value=80.0,
+            max_value=99.9,
+            value=95.0,
+            step=0.1,
+            help="Set the minimum acceptable safety compliance rate"
+        )
+        st.session_state.compliance_threshold = compliance_threshold
+    
+    # Custom PPE Selection
+    st.markdown("---")
+    st.subheader("Custom PPE Requirements")
+    
+    if st.session_state.model is None:
+        st.session_state.model = load_model()
+    
+    if st.session_state.model:
+        available_classes = get_available_classes(st.session_state.model)
         
-        elif camera_mode == "Mobile Camera":
-            st.info("📱 Use the Mobile Camera tab for direct photo analysis")
-            if st.button("📱 Go to Mobile Camera", type="primary"):
-                st.session_state.current_page = "Mobile Camera"
-                st.rerun()
-                
-        elif camera_mode == "Test Mode":
-            if st.button("🧪 Start Test Mode", type="primary"):
-                st.session_state.monitoring = True
-                start_test_mode()
+        if available_classes:
+            col1, col2, col3 = st.columns(3)
+            selected_ppe = {}
             
-            if st.button("⏹️ Stop Test Mode"):
-                st.session_state.monitoring = False
-                st.rerun()
+            # Group PPE items by category
+            head_protection = {id: name for id, name in available_classes.items() 
+                             if any(keyword in name.lower() for keyword in ['helmet', 'hat', 'hardhat'])}
+            eye_protection = {id: name for id, name in available_classes.items() 
+                            if any(keyword in name.lower() for keyword in ['glass', 'goggle', 'eye'])}
+            body_protection = {id: name for id, name in available_classes.items() 
+                             if any(keyword in name.lower() for keyword in ['vest', 'clothing', 'fr', 'suit'])}
+            hand_protection = {id: name for id, name in available_classes.items() 
+                             if any(keyword in name.lower() for keyword in ['glove', 'hand'])}
+            foot_protection = {id: name for id, name in available_classes.items() 
+                             if any(keyword in name.lower() for keyword in ['boot', 'shoe', 'foot'])}
+            respiratory = {id: name for id, name in available_classes.items() 
+                         if any(keyword in name.lower() for keyword in ['mask', 'respirator'])}
+            fall_protection = {id: name for id, name in available_classes.items() 
+                             if any(keyword in name.lower() for keyword in ['harness', 'fall'])}
+            
+            with col1:
+                st.write("**Head Protection**")
+                for class_id, class_name in head_protection.items():
+                    if st.checkbox(f"{class_name} (Class {class_id})", value=True):
+                        selected_ppe[class_id] = class_name
                 
-        elif camera_mode == "Upload Video":
-            uploaded_file = st.file_uploader("Choose a video file", type=['mp4', 'avi', 'mov'])
-            if uploaded_file and st.button("🎬 Process Video"):
-                if CV2_AVAILABLE:
-                    process_uploaded_video(uploaded_file)
+                st.write("**Eye Protection**")
+                for class_id, class_name in eye_protection.items():
+                    if st.checkbox(f"{class_name} (Class {class_id})", value=True):
+                        selected_ppe[class_id] = class_name
+            
+            with col2:
+                st.write("**Body Protection**")
+                for class_id, class_name in body_protection.items():
+                    if st.checkbox(f"{class_name} (Class {class_id})", value=True):
+                        selected_ppe[class_id] = class_name
+                
+                st.write("**Hand Protection**")
+                for class_id, class_name in hand_protection.items():
+                    if st.checkbox(f"{class_name} (Class {class_id})", value=True):
+                        selected_ppe[class_id] = class_name
+            
+            with col3:
+                st.write("**Foot Protection**")
+                for class_id, class_name in foot_protection.items():
+                    if st.checkbox(f"{class_name} (Class {class_id})", value=True):
+                        selected_ppe[class_id] = class_name
+                
+                st.write("**Respiratory & Fall Protection**")
+                for class_id, class_name in {**respiratory, **fall_protection}.items():
+                    if st.checkbox(f"{class_name} (Class {class_id})", value=True):
+                        selected_ppe[class_id] = class_name
+            
+            # Save project configuration
+            if st.button("💾 Save Project Configuration", type="primary"):
+                if project_name and selected_ppe:
+                    st.session_state.projects[project_name] = {
+                        'name': project_name,
+                        'location': project_location,
+                        'supervisor': project_supervisor,
+                        'ppe_requirements': selected_ppe,
+                        'preset': preset_selection,
+                        'created_at': datetime.now()
+                    }
+                    st.session_state.current_project = project_name
+                    st.session_state.selected_ppe = selected_ppe
+                    st.success(f"✅ Project '{project_name}' configured successfully!")
+                    st.info(f"📋 Monitoring {len(selected_ppe)} PPE items for this project")
                 else:
-                    st.error("❌ OpenCV not available for video processing")
-    
-    with col2:
-        st.subheader("Live Stats")
-        st.metric("Violations Detected", len(st.session_state.violations))
-        st.metric("Monitoring Status", "ACTIVE" if st.session_state.monitoring else "INACTIVE")
-        st.metric("Selected Classes", len(st.session_state.selected_ppe))
-        st.metric("Model Mode", "DEMO" if st.session_state.demo_mode else "PRODUCTION")
-        
-        # Quick navigation
-        st.subheader("Quick Navigation")
-        if st.button("📱 Mobile Camera", use_container_width=True):
-            st.session_state.current_page = "Mobile Camera"
-            st.rerun()
-        if st.button("🎯 Class Selection", use_container_width=True):
-            st.session_state.current_page = "Class Selection"
-            st.rerun()
-        if st.button("📊 Dashboard", use_container_width=True):
-            st.session_state.current_page = "Dashboard"
-            st.rerun()
-
-# ... (keep all the other functions exactly the same as in your previous code: show_class_selection, show_camera_setup, show_settings, start_ip_camera_monitoring, run_monitoring_loop, start_test_mode, create_custom_test_image, process_uploaded_video, check_for_violations, save_violation, show_dashboard, show_reports, generate_excel_report, show_deployment_guide)
-
-def show_class_selection():
-    st.markdown('<h2 class="section-header">🎯 Select Detection Classes</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.model_loaded:
-        st.error("❌ Model not loaded. Please wait for model initialization.")
-        if st.button("🔄 Retry Model Loading"):
-            st.session_state.model_loaded = False
-            st.rerun()
-        return
-    
-    if not st.session_state.available_classes:
-        st.error("❌ No classes available from the model.")
-        return
-    
-    if st.session_state.demo_mode:
-        st.warning("🦅 **SafetyEagle Demo Mode**: Using YOLOv8n pretrained model for demonstration.")
-    
-    st.success(f"🎉 **Model loaded successfully! Found {len(st.session_state.available_classes)} detection classes**")
-    
-    # Display all available classes for selection
-    st.subheader("Available Detection Classes")
-    st.info("Select which safety classes you want to monitor:")
-    
-    # Create columns for better organization
-    num_columns = 3
-    classes_list = list(st.session_state.available_classes.items())
-    classes_per_column = (len(classes_list) + num_columns - 1) // num_columns
-    
-    cols = st.columns(num_columns)
-    
-    selected_classes = st.session_state.selected_ppe.copy()
-    
-    for i, (class_id, class_name) in enumerate(classes_list):
-        col_idx = i // classes_per_column
-        with cols[col_idx]:
-            is_selected = st.checkbox(
-                f"**Class {class_id}:** {class_name}",
-                value=class_id in selected_classes,
-                key=f"class_{class_id}"
-            )
-            if is_selected:
-                selected_classes[class_id] = class_name
-            elif class_id in selected_classes:
-                del selected_classes[class_id]
-    
-    # Selection actions
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("✅ Select All Classes", use_container_width=True):
-            st.session_state.selected_ppe = st.session_state.available_classes.copy()
-            st.success("✅ All classes selected!")
-            st.rerun()
-    
-    with col2:
-        if st.button("❌ Clear All Selections", use_container_width=True):
-            st.session_state.selected_ppe = {}
-            st.info("🗑️ All selections cleared")
-            st.rerun()
-    
-    with col3:
-        if st.button("💾 Save Selection", type="primary", use_container_width=True):
-            st.session_state.selected_ppe = selected_classes
-            st.success(f"✅ Saved {len(selected_classes)} classes for monitoring!")
-    
-    # Show current selection summary
-    if selected_classes:
-        st.subheader("Current Selection Summary")
-        st.info(f"**Selected {len(selected_classes)} out of {len(st.session_state.available_classes)} classes:**")
-        
-        # Display selected classes in a nice format
-        selected_items = list(selected_classes.items())
-        num_cols = 4
-        summary_cols = st.columns(num_cols)
-        
-        for i, (class_id, class_name) in enumerate(selected_items):
-            with summary_cols[i % num_cols]:
-                st.markdown(f"📍 **{class_id}:** {class_name}")
+                    st.error("❌ Please provide project name and select at least one PPE item")
+        else:
+            st.error("No classes found in the model. Please check your model configuration.")
     else:
-        st.warning("⚠️ No classes selected. Please select at least one class to enable monitoring.")
+        st.error("Model not loaded. Please check the model path.")
 
 def show_camera_setup():
-    st.markdown('<h2 class="section-header">📷 Camera Configuration</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">📷 Camera System Configuration</h2>', unsafe_allow_html=True)
     
-    if not st.session_state.model_loaded:
-        st.error("❌ Please wait for model initialization on the Class Selection page first.")
-        return
+    tab1, tab2, tab3, tab4 = st.tabs(["Local Cameras", "IP Cameras", "Mobile Integration", "Video Files"])
     
-    if not CV2_AVAILABLE:
-        st.error("❌ OpenCV not available. Camera functionality limited.")
-        st.info("🦅 SafetyEagle AI can still analyze uploaded videos and images.")
+    with tab1:
+        st.subheader("Local Camera Setup")
+        st.info("Configure built-in or USB cameras for local monitoring")
+        
+        if st.button("🔍 Scan for Local Cameras", type="primary"):
+            detect_local_cameras()
     
-    st.subheader("1. IP Camera / Network Stream")
-    st.info("Connect to IP cameras, RTSP streams, or network cameras")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        camera_url = st.text_input(
-            "IP Camera URL:",
-            placeholder="rtsp://username:password@ip:port/stream or http://ip:port/video"
-        )
-    
-    with col2:
-        st.write("")
-        st.write("")
-        if st.button("🔗 Test Connection"):
-            if camera_url:
-                is_valid, message = validate_ip_camera_url(camera_url)
-                if is_valid:
+    with tab2:
+        st.subheader("IP Camera Configuration")
+        st.info("Connect to network cameras for remote site monitoring")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            camera_url = st.text_input(
+                "Camera Stream URL:",
+                placeholder="rtsp://username:password@ip:port/stream"
+            )
+        
+        with col2:
+            st.write("")
+            if st.button("🔗 Test Connection", use_container_width=True):
+                if camera_url:
                     with st.spinner("Testing camera connection..."):
                         success, result = test_ip_camera(camera_url)
                     if success:
                         st.success(result)
                         if camera_url not in st.session_state.camera_urls:
                             st.session_state.camera_urls.append(camera_url)
-                            st.success("✅ Camera added to saved list!")
                     else:
                         st.error(result)
                 else:
-                    st.error(message)
-            else:
-                st.error("Please enter a camera URL")
-    
-    # Common camera URL examples
-    with st.expander("📋 Common Camera URL Formats"):
-        st.markdown("""
-        **RTSP Examples:**
-        - `rtsp://username:password@192.168.1.100:554/stream1`
-        - `rtsp://admin:password@camera_ip:554/11`
+                    st.error("Please enter a camera URL")
         
-        **HTTP Examples:**
-        - `http://192.168.1.100:8080/video`
-        - `http://192.168.1.100:4747/video`
-        """)
+        # Professional camera templates
+        with st.expander("🎯 Oil & Gas Camera Templates"):
+            st.markdown("""
+            **Offshore Platform Cameras:**
+            - Hikvision: `rtsp://admin:password@192.168.1.100:554/Streaming/Channels/101`
+            - Axis: `rtsp://root:pass@platform-cam/axis-media/media.amp`
+            
+            **Drilling Rig Cameras:**
+            - Dahua: `rtsp://admin:password@rig-cam:554/cam/realmonitor?channel=1&subtype=0`
+            - Bosch: `rtsp://admin@drill-rig:554/stream1`
+            
+            **Refinery Area Cameras:**
+            - RTSP over secure VPN tunnels
+            - HTTP streams with authentication
+            """)
     
-    # Saved camera URLs
-    if st.session_state.camera_urls:
-        st.subheader("💾 Saved Camera URLs")
-        for i, url in enumerate(st.session_state.camera_urls):
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                st.code(url, language="text")
-            with col2:
-                if st.button("🔗 Test", key=f"test_{i}"):
-                    with st.spinner("Testing..."):
-                        success, result = test_ip_camera(url)
-                    if success:
-                        st.success(result)
-                    else:
-                        st.error(result)
-            with col3:
-                if st.button("🗑️ Remove", key=f"remove_{i}"):
-                    st.session_state.camera_urls.pop(i)
-                    st.rerun()
+    with tab3:
+        st.subheader("Mobile Camera Integration")
+        st.info("Use mobile devices as temporary monitoring cameras")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **Android Devices:**
+            1. Install **IP Webcam** app
+            2. Configure security settings
+            3. Start server with authentication
+            4. Use URL: `http://device-ip:8080/video`
+            
+            **Security Note:** Use secure networks only
+            """)
+        
+        with col2:
+            st.markdown("""
+            **iOS Devices:**
+            1. Install **IP Camera** app
+            2. Enable RTSP streaming
+            3. Set up authentication
+            4. Use provided secure URL
+            
+            **Best Practice:** Temporary use only for inspections
+            """)
     
-    st.subheader("2. Video File Upload")
-    st.info("Use pre-recorded videos for safety analysis")
-    
-    uploaded_file = st.file_uploader("Upload video file", type=['mp4', 'avi', 'mov', 'mkv'])
-    if uploaded_file:
-        st.success(f"✅ Video uploaded: {uploaded_file.name}")
+    with tab4:
+        st.subheader("Video File Analysis")
+        st.info("Analyze pre-recorded safety footage")
+        
+        uploaded_file = st.file_uploader(
+            "Upload Safety Video", 
+            type=['mp4', 'avi', 'mov', 'mkv'],
+            help="Upload recorded footage for compliance analysis"
+        )
+        
+        if uploaded_file:
+            st.success(f"✅ Video ready for analysis: {uploaded_file.name}")
+            if st.button("📊 Analyze Video Compliance"):
+                analyze_video_compliance(uploaded_file)
 
-def show_settings():
-    st.markdown('<h2 class="section-header">⚙️ Detection Settings</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.model_loaded:
-        st.error("❌ Please select classes first on the Class Selection page.")
-        return
+def show_detection_settings():
+    st.markdown('<h2 class="section-header">⚙️ Advanced Detection Settings</h2>', unsafe_allow_html=True)
     
     if not st.session_state.selected_ppe:
-        st.warning("⚠️ No classes selected. Please go to 'Class Selection' page first.")
+        st.warning("⚠️ Please configure project PPE requirements first!")
         return
     
-    st.subheader("Detection Performance Settings")
-    
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns([2, 1])
     
     with col1:
+        st.subheader("Performance Configuration")
+        
+        # Real-time performance settings
         confidence = st.slider(
-            "Confidence Threshold",
-            min_value=0.1,
+            "Detection Confidence Threshold",
+            min_value=0.3,
             max_value=0.9,
-            value=st.session_state.detection_settings.get('confidence', 0.5),
-            step=0.1,
-            help="Higher values = fewer but more accurate detections"
+            value=0.6,
+            step=0.05,
+            help="Higher values reduce false positives but may miss some detections"
         )
-    
-    with col2:
-        speed_setting = st.selectbox(
-            "Detection Speed",
-            options=["fast", "medium", "accurate"],
+        
+        processing_mode = st.selectbox(
+            "Processing Mode",
+            ["High Speed", "Balanced", "High Accuracy"],
             index=1,
-            help="Fast: Lower accuracy, Medium: Balanced, Accurate: Higher accuracy but slower"
+            help="Optimize for your hardware and requirements"
         )
-    
-    with col3:
+        
         frame_skip = st.slider(
             "Frame Processing Rate",
             min_value=1,
             max_value=10,
-            value=st.session_state.detection_settings.get('frame_skip', 3),
-            help="Process every Nth frame (1=process all frames, 10=process every 10th frame)"
+            value=2,
+            help="Process every Nth frame for performance optimization"
+        )
+        
+        # Alert settings
+        st.subheader("Alert Configuration")
+        
+        alert_level = st.selectbox(
+            "Violation Alert Level",
+            ["Low - Log Only", "Medium - Visual Alert", "High - Audio & Visual"],
+            index=1,
+            help="Set how violations are reported"
+        )
+        
+        auto_report = st.checkbox(
+            "Generate Automatic Compliance Reports",
+            value=True,
+            help="Automatically generate hourly/daily compliance reports"
         )
     
-    # Map speed settings
-    speed_params = {
-        "fast": {"imgsz": 320, "half": False},
-        "medium": {"imgsz": 640, "half": False},
-        "accurate": {"imgsz": 1280, "half": False}
-    }
-    
-    # Save settings
-    if st.button("💾 Save Settings", type="primary"):
-        st.session_state.detection_settings = {
-            'confidence': confidence,
-            'speed': speed_setting,
-            'frame_skip': frame_skip,
-            'speed_params': speed_params[speed_setting]
-        }
-        st.success("✅ Settings saved successfully!")
-    
-    # Show current selection
-    st.subheader("Currently Selected Classes")
-    selected_classes_display = [f"{class_id}: {class_name}" for class_id, class_name in st.session_state.selected_ppe.items()]
-    st.info(f"**Monitoring {len(selected_classes_display)} classes:** {', '.join(selected_classes_display[:5])}{'...' if len(selected_classes_display) > 5 else ''}")
-
-def start_ip_camera_monitoring(camera_url):
-    """IP camera monitoring"""
-    if not CV2_AVAILABLE:
-        st.error("❌ OpenCV not available for camera streaming")
-        return
+    with col2:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.subheader("Current Configuration")
+        st.write(f"**Project:** {st.session_state.current_project or 'Not Set'}")
+        st.write(f"**PPE Items:** {len(st.session_state.selected_ppe)}")
+        st.write(f"**Confidence:** {confidence}")
+        st.write(f"**Mode:** {processing_mode}")
+        st.write(f"**Frame Skip:** {frame_skip}")
+        st.write(f"**Alerts:** {alert_level}")
+        st.markdown('</div>', unsafe_allow_html=True)
         
-    st.info(f"🌐 Connecting to IP camera: {camera_url}")
+        # Save settings
+        if st.button("💾 Apply Settings", type="primary", use_container_width=True):
+            # Map processing modes to parameters
+            speed_params = {
+                "High Speed": {"imgsz": 320, "half": True},
+                "Balanced": {"imgsz": 640, "half": False},
+                "High Accuracy": {"imgsz": 1280, "half": False}
+            }
+            
+            st.session_state.detection_settings = {
+                'confidence': confidence,
+                'speed': processing_mode,
+                'frame_skip': frame_skip,
+                'speed_params': speed_params[processing_mode],
+                'alert_level': alert_level,
+                'auto_report': auto_report
+            }
+            st.success("✅ Settings applied successfully!")
+
+def show_live_monitoring():
+    st.markdown('<h2 class="section-header">📹 Live Safety Monitoring</h2>', unsafe_allow_html=True)
     
-    confidence = st.session_state.detection_settings.get('confidence', 0.5)
-    frame_skip = st.session_state.detection_settings.get('frame_skip', 3)
-    speed_params = st.session_state.detection_settings.get('speed_params', {'imgsz': 640, 'half': False})
+    if not st.session_state.selected_ppe:
+        st.warning("⚠️ Please configure project and PPE requirements first!")
+        return
+    
+    if st.session_state.model is None:
+        st.session_state.model = load_model()
+    
+    # Display current project info
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.write("**Current Project**")
+        st.write(f"### {st.session_state.current_project or 'Not Set'}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.write("**PPE Requirements**")
+        st.write(f"### {len(st.session_state.selected_ppe)} Items")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col3:
+        compliance = calculate_compliance_rate()
+        status_class = "success-card" if compliance >= st.session_state.compliance_threshold else "warning-card"
+        st.markdown(f'<div class="{status_class}">', unsafe_allow_html=True)
+        st.write("**Compliance Rate**")
+        st.write(f"### {compliance:.1f}%")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Monitoring controls
+    st.subheader("Monitoring Controls")
+    
+    source_type = st.radio(
+        "Video Source",
+        ["Local Camera", "IP Camera", "Test Mode", "Video File"],
+        horizontal=True
+    )
+    
+    if source_type == "Local Camera":
+        if st.button("🎥 Start Local Monitoring", type="primary", use_container_width=True):
+            st.session_state.monitoring = True
+            start_webcam_monitoring()
+    
+    elif source_type == "IP Camera":
+        if st.session_state.camera_urls:
+            selected_url = st.selectbox("Select Camera", st.session_state.camera_urls)
+            if st.button("🌐 Start IP Monitoring", type="primary", use_container_width=True):
+                st.session_state.monitoring = True
+                start_ip_camera_monitoring(selected_url)
+        else:
+            st.warning("No IP cameras configured. Please add cameras first.")
+    
+    elif source_type == "Test Mode":
+        if st.button("🧪 Start Test Mode", type="primary", use_container_width=True):
+            st.session_state.monitoring = True
+            start_test_mode()
+    
+    # Stop button
+    if st.session_state.monitoring:
+        if st.button("⏹️ Stop Monitoring", type="secondary", use_container_width=True):
+            st.session_state.monitoring = False
+            st.rerun()
+
+def show_safety_dashboard():
+    st.markdown('<h2 class="section-header">📊 Safety Compliance Dashboard</h2>', unsafe_allow_html=True)
+    
+    if not st.session_state.violations:
+        st.info("📈 No safety data available yet. Start monitoring to see analytics.")
+        return
+    
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_violations = len(st.session_state.violations)
+        st.metric("Total Violations", total_violations)
+    
+    with col2:
+        today_violations = len([v for v in st.session_state.violations 
+                              if v['timestamp'].date() == datetime.now().date()])
+        st.metric("Today's Violations", today_violations)
+    
+    with col3:
+        compliance_rate = calculate_compliance_rate()
+        st.metric("Compliance Rate", f"{compliance_rate:.1f}%")
+    
+    with col4:
+        status = "✅ COMPLIANT" if compliance_rate >= st.session_state.compliance_threshold else "⚠️ NEEDS ATTENTION"
+        st.metric("Safety Status", status)
+    
+    # Charts and analytics
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Violations Trend")
+        df = pd.DataFrame([
+            {
+                'timestamp': v['timestamp'],
+                'hour': v['timestamp'].hour,
+                'missing_ppe': v['missing_ppe']
+            }
+            for v in st.session_state.violations
+        ])
+        
+        if not df.empty:
+            hourly_data = df.groupby('hour').size()
+            fig = px.line(
+                x=hourly_data.index,
+                y=hourly_data.values,
+                labels={'x': 'Hour of Day', 'y': 'Violations'},
+                title="Violations by Hour"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("PPE Compliance Breakdown")
+        ppe_violations = {}
+        for violation in st.session_state.violations:
+            items = violation['missing_ppe'].split(', ')
+            for item in items:
+                ppe_violations[item] = ppe_violations.get(item, 0) + 1
+        
+        if ppe_violations:
+            fig = px.pie(
+                values=list(ppe_violations.values()),
+                names=list(ppe_violations.keys()),
+                title="Most Frequently Missing PPE"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # Recent violations
+    st.subheader("Recent Safety Violations")
+    for i, violation in enumerate(st.session_state.violations[-10:]):
+        with st.expander(f"🚨 Violation {i+1} - {violation['timestamp'].strftime('%H:%M:%S')}"):
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                st.image(violation['image'], use_column_width=True)
+            with col2:
+                st.write(f"**Missing PPE:** {violation['missing_ppe']}")
+                st.write(f"**Time:** {violation['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                st.write(f"**Project:** {st.session_state.current_project}")
+
+def show_compliance_reports():
+    st.markdown('<h2 class="section-header">📈 Compliance Reporting</h2>', unsafe_allow_html=True)
+    
+    if not st.session_state.violations:
+        st.warning("No compliance data available for reporting.")
+        return
+    
+    # Report generation options
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📊 Generate Excel Report", type="primary", use_container_width=True):
+            generate_excel_report()
+    
+    with col2:
+        if st.button("📋 Generate PDF Summary", use_container_width=True):
+            generate_pdf_summary()
+    
+    with col3:
+        if st.button("🔄 Refresh Analytics", use_container_width=True):
+            st.rerun()
+    
+    # Data table
+    st.subheader("Violation Records")
+    df = pd.DataFrame([
+        {
+            'Timestamp': v['timestamp'],
+            'Missing PPE': v['missing_ppe'],
+            'Project': st.session_state.current_project,
+            'Compliance Rate': f"{calculate_compliance_rate():.1f}%"
+        }
+        for v in st.session_state.violations
+    ])
+    
+    st.dataframe(df, use_container_width=True)
+    
+    # Export options
+    st.download_button(
+        "📥 Export CSV",
+        df.to_csv(index=False),
+        "safety_compliance_report.csv",
+        "text/csv"
+    )
+
+def show_deployment_guide():
+    st.markdown('<h2 class="section-header">🌐 Enterprise Deployment</h2>', unsafe_allow_html=True)
+    
+    st.info("""
+    **Oil & Gas Deployment Considerations:**
+    - Offshore platform network constraints
+    - Hazardous area compliance
+    - Redundant systems for critical monitoring
+    - Integration with existing safety systems
+    """)
+    
+    # Deployment options
+    tab1, tab2, tab3 = st.tabs(["Cloud Deployment", "On-Premises", "Hybrid"])
+    
+    with tab1:
+        st.subheader("Cloud Deployment Options")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **AWS for Oil & Gas**
+            - Amazon SageMaker for model hosting
+            - AWS IoT for camera streams
+            - S3 for compliance data storage
+            - CloudWatch for monitoring
+            
+            **Azure Energy Services**
+            - Azure IoT Hub for device management
+            - Azure ML for AI capabilities
+            - Power BI for compliance dashboards
+            """)
+        
+        with col2:
+            st.markdown("""
+            **Specialized Solutions**
+            - **Schlumberger** DELFI integration
+            - **Halliburton** DecisionSpace compatibility
+            - **Baker Hughes** IIoT platforms
+            - **OSIsoft** PI System data integration
+            """)
+    
+    with tab2:
+        st.subheader("On-Premises Deployment")
+        
+        st.markdown("""
+        **Offshore Platform Requirements:**
+        - Ruggedized servers and networking
+        - Redundant power supplies
+        - Satellite communication backup
+        - Local processing for network outages
+        
+        **Safety Certifications Required:**
+        - ATEX/IECEx for hazardous areas
+        - Marine classification society approvals
+        - Cybersecurity certifications
+        """)
+    
+    with tab3:
+        st.subheader("Hybrid Deployment")
+        
+        st.markdown("""
+        **Best Practice Architecture:**
+        - Local processing on platforms/rigs
+        - Cloud synchronization when connected
+        - Edge AI for real-time detection
+        - Centralized compliance reporting
+        
+        **Data Flow:**
+        Platform Cameras → Local Server → Cloud Dashboard → Management Reports
+        """)
+
+# Enhanced monitoring functions (similar to original but with professional features)
+def start_webcam_monitoring():
+    """Enhanced webcam monitoring with professional features"""
+    st.info("🚀 Starting professional safety monitoring...")
+    
+    confidence = st.session_state.detection_settings['confidence']
+    frame_skip = st.session_state.detection_settings['frame_skip']
+    speed_params = st.session_state.detection_settings['speed_params']
     selected_classes = list(st.session_state.selected_ppe.keys())
     
-    # Test connection first
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    
+    if not cap.isOpened():
+        st.error("❌ Cannot access safety camera. Please check connections.")
+        return
+    
+    # Professional camera configuration
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    
+    run_enhanced_monitoring_loop(cap, "Safety Monitoring Camera", selected_classes, confidence, frame_skip, speed_params)
+
+def start_ip_camera_monitoring(camera_url):
+    """Enhanced IP camera monitoring"""
+    st.info(f"🌐 Connecting to safety camera: {camera_url}")
+    
+    confidence = st.session_state.detection_settings['confidence']
+    frame_skip = st.session_state.detection_settings['frame_skip']
+    speed_params = st.session_state.detection_settings['speed_params']
+    selected_classes = list(st.session_state.selected_ppe.keys())
+    
     success, message = test_ip_camera(camera_url)
     if not success:
         st.error(f"❌ {message}")
         st.session_state.monitoring = False
         return
     
-    st.success(message)
+    st.success("✅ Safety camera connected successfully!")
     
-    # Open camera stream
     cap = cv2.VideoCapture(camera_url)
-    
     if not cap.isOpened():
-        st.error("❌ Failed to open camera stream")
+        st.error("❌ Failed to initialize safety camera stream")
         st.session_state.monitoring = False
         return
     
-    run_monitoring_loop(cap, f"IP Camera: {camera_url}", selected_classes, confidence, frame_skip, speed_params)
+    run_enhanced_monitoring_loop(cap, f"Remote Safety Camera", selected_classes, confidence, frame_skip, speed_params)
 
-def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_skip, speed_params):
-    """Generic monitoring loop for all camera types"""
-    if not CV2_AVAILABLE:
-        st.error("❌ OpenCV not available for monitoring")
-        return
-        
+def run_enhanced_monitoring_loop(cap, source_name, selected_classes, confidence, frame_skip, speed_params):
+    """Professional monitoring loop with enhanced features"""
     frame_placeholder = st.empty()
     status_placeholder = st.empty()
     performance_placeholder = st.empty()
+    compliance_placeholder = st.empty()
     
     frame_count = 0
     processing_times = []
-    last_fps_update = time.time()
-    fps = 0
+    violation_count = 0
     
     while st.session_state.monitoring and cap.isOpened():
         try:
@@ -898,13 +908,13 @@ def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_sk
             ret, frame = cap.read()
             
             if not ret:
-                st.error("❌ Failed to read frame from camera")
+                st.error("❌ Lost connection to safety camera")
                 break
             
             frame_count += 1
             
             if frame_count % frame_skip == 0:
-                # Run detection
+                # Professional detection with enhanced visualization
                 results = st.session_state.model(
                     frame, 
                     conf=confidence,
@@ -916,190 +926,251 @@ def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_sk
                 violations = check_for_violations(results, selected_classes)
                 annotated_frame = results[0].plot()
                 
-                # Add performance overlay
-                cv2.putText(annotated_frame, f"SafetyEagle AI", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                cv2.putText(annotated_frame, f"Classes: {len(selected_classes)}", (10, 90), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                # Enhanced professional overlay
+                compliance_rate = calculate_compliance_rate()
+                status_color = (0, 255, 0) if not violations else (0, 0, 255)
                 
-                annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                frame_placeholder.image(annotated_frame_rgb, caption=source_name, use_column_width=True)
+                cv2.putText(annotated_frame, f"OIL&GAS SAFETY MONITOR", (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.putText(annotated_frame, f"Project: {st.session_state.current_project}", (10, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(annotated_frame, f"Compliance: {compliance_rate:.1f}%", (10, 85), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, status_color, 2)
                 
                 if violations:
-                    status_placeholder.warning(f"🚨 Missing: {', '.join(violations)}")
+                    cv2.putText(annotated_frame, f"VIOLATION: {', '.join(violations)}", (10, 110), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    status_placeholder.error(f"🚨 SAFETY VIOLATION: Missing {', '.join(violations)}")
                     save_violation(frame, violations)
+                    violation_count += 1
                 else:
-                    status_placeholder.success("✅ All selected classes detected")
+                    status_placeholder.success("✅ All safety requirements met")
+                
+                annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+                frame_placeholder.image(annotated_frame_rgb, use_column_width=True)
             
-            # Calculate FPS
+            # Performance monitoring
             processing_time = time.time() - start_time
             processing_times.append(processing_time)
             
-            if time.time() - last_fps_update > 1.0:
-                if processing_times:
-                    avg_time = np.mean(processing_times)
-                    fps = 1.0 / avg_time if avg_time > 0 else 0
-                    processing_times = []
-                last_fps_update = time.time()
+            if frame_count % 30 == 0:
+                avg_time = np.mean(processing_times[-30:]) if processing_times else 0
+                fps = 1.0 / avg_time if avg_time > 0 else 0
                 
                 performance_placeholder.info(
-                    f"**Performance:** {fps:.1f} FPS | "
-                    f"Frame skip: {frame_skip} | "
-                    f"Processing: {avg_time*1000:.1f}ms"
+                    f"**System Performance:** {fps:.1f} FPS | "
+                    f"Processing: {avg_time*1000:.1f}ms | "
+                    f"Violations: {violation_count}"
+                )
+                
+                compliance_placeholder.metric(
+                    "Current Compliance Rate", 
+                    f"{compliance_rate:.1f}%",
+                    delta=f"Target: {st.session_state.compliance_threshold}%"
                 )
             
             time.sleep(0.01)
             
         except Exception as e:
-            st.error(f"Monitoring error: {e}")
+            st.error(f"Monitoring system error: {e}")
             break
     
     cap.release()
 
 def start_test_mode():
-    """Test mode with simulation"""
-    st.success("🎯 SafetyEagle Test Mode Active - Class Detection Simulation")
+    """Enhanced test mode for oil & gas scenarios"""
+    st.success("🎯 Professional Test Mode Active - Oil & Gas Safety Simulation")
     
     selected_classes = list(st.session_state.selected_ppe.keys())
+    ppe_items = list(st.session_state.selected_ppe.values())
     
     frame_placeholder = st.empty()
     status_placeholder = st.empty()
-    info_placeholder = st.empty()
+    scenario_placeholder = st.empty()
     
     frame_count = 0
+    scenarios = [
+        "Full Compliance - All PPE Present",
+        "Missing Head Protection",
+        "Missing Eye Protection", 
+        "Missing Hand Protection",
+        "Multiple Violations",
+        "Critical Safety Breach"
+    ]
     
     while st.session_state.monitoring:
         try:
-            test_image = create_custom_test_image(frame_count, st.session_state.selected_ppe)
+            scenario_index = (frame_count // 50) % len(scenarios)
+            current_scenario = scenarios[scenario_index]
+            scenario_placeholder.info(f"**Training Scenario:** {current_scenario}")
             
-            if st.session_state.model:
-                results = st.session_state.model(
-                    test_image, 
-                    conf=st.session_state.detection_settings.get('confidence', 0.5),
-                    classes=selected_classes,
-                    verbose=False
-                )
-                annotated_frame = results[0].plot()
-            else:
-                # Fallback if no model
-                annotated_frame = test_image
+            # Create professional test image
+            test_image = create_professional_test_image(frame_count, ppe_items, current_scenario)
             
-            cv2.putText(annotated_frame, "SAFETYEAGLE TEST MODE", (10, 30), 
+            # Run detection
+            results = st.session_state.model(
+                test_image, 
+                conf=st.session_state.detection_settings['confidence'],
+                classes=selected_classes,
+                verbose=False
+            )
+            
+            violations = check_for_violations(results, selected_classes)
+            annotated_frame = results[0].plot() if results and len(results) > 0 else test_image
+            
+            # Add professional overlay
+            cv2.putText(annotated_frame, "OIL & GAS SAFETY TRAINING", (10, 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            cv2.putText(annotated_frame, f"Scenario: {current_scenario}", (10, 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
             
             annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-            frame_placeholder.image(annotated_frame_rgb, caption="SafetyEagle Test Mode", use_column_width=True)
+            frame_placeholder.image(annotated_frame_rgb, use_column_width=True)
             
-            # Simulate violations for demo
-            if frame_count % 50 < 25:
-                status_placeholder.warning("🚨 Simulation: Safety violation detected")
-                info_placeholder.info("Demo: Missing safety equipment simulated")
+            if violations:
+                status_placeholder.warning(f"🚨 Training Violation: {', '.join(violations)}")
                 if frame_count % 30 == 0:
-                    save_violation(test_image, ["Simulated Violation"])
+                    save_violation(test_image, violations)
             else:
-                status_placeholder.success("✅ Simulation: All safety protocols followed")
-                info_placeholder.info("Demo: Normal operation simulated")
+                status_placeholder.success("✅ Perfect compliance - Safety standards met")
             
             frame_count += 1
-            time.sleep(0.3)
+            time.sleep(0.2)
             
         except Exception as e:
-            st.error(f"Test mode error: {e}")
+            st.error(f"Training system error: {e}")
             break
 
-def create_custom_test_image(frame_count, selected_ppe):
-    """Create test image based on selected classes"""
-    img = np.ones((480, 640, 3), dtype=np.uint8) * 150
-    cv2.rectangle(img, (200, 100), (440, 400), (0, 255, 0), 2)
-    cv2.putText(img, "SafetyEagle AI", (250, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+def create_professional_test_image(frame_count, ppe_items, scenario):
+    """Create professional test images for oil & gas training"""
+    img = np.ones((720, 1280, 3), dtype=np.uint8) * 50  # Dark background
     
-    class_names = list(selected_ppe.values())
-    scenario = (frame_count // 40) % (len(class_names) + 1)
+    # Simulate industrial background
+    cv2.rectangle(img, (100, 100), (1180, 600), (80, 80, 80), -1)
+    cv2.rectangle(img, (100, 100), (1180, 600), (200, 200, 200), 2)
+    
+    # Person silhouette
+    cv2.ellipse(img, (640, 400), (120, 200), 0, 0, 360, (100, 100, 100), -1)
+    
+    # Scenario-based PPE visualization
     missing_items = []
+    if "Missing Head" in scenario:
+        missing_items.append("Hard Hat")
+    if "Missing Eye" in scenario:
+        missing_items.append("Safety Glasses") 
+    if "Missing Hand" in scenario:
+        missing_items.append("Safety Gloves")
+    if "Multiple" in scenario:
+        missing_items = ["Hard Hat", "Safety Vest"]
+    if "Critical" in scenario:
+        missing_items = ppe_items[:3]  # Missing first 3 items
     
-    if scenario > 0:
-        missing_index = (scenario - 1) % len(class_names)
-        missing_items = [class_names[missing_index]]
+    # Draw available PPE
+    y_pos = 120
+    for i, ppe_item in enumerate(ppe_items):
+        if ppe_item not in missing_items:
+            color = [(0, 255, 0), (255, 255, 0), (0, 255, 255), (255, 0, 255), (255, 255, 255)][i % 5]
+            cv2.rectangle(img, (150, y_pos), (400, y_pos + 30), color, -1)
+            cv2.putText(img, f"✓ {ppe_item}", (160, y_pos + 20), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+            y_pos += 40
     
-    y_pos = 50
-    for i, class_name in enumerate(class_names):
-        if class_name not in missing_items:
-            color = [(255, 0, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)][i % 5]
-            cv2.rectangle(img, (250, y_pos), (390, y_pos + 40), color, -1)
-            cv2.putText(img, class_name, (260, y_pos + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            y_pos += 50
-    
+    # Draw missing PPE
     if missing_items:
-        cv2.putText(img, f"MISSING: {', '.join(missing_items)}", 
-                   (200, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        y_pos = 120
+        for i, missing_item in enumerate(missing_items):
+            cv2.rectangle(img, (800, y_pos), (1050, y_pos + 30), (0, 0, 255), -1)
+            cv2.putText(img, f"✗ {missing_item}", (810, y_pos + 20), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            y_pos += 40
+        
+        cv2.putText(img, "SAFETY VIOLATION DETECTED", (400, 650), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    
+    # Add professional header
+    cv2.putText(img, "OIL & GAS PPE COMPLIANCE MONITORING", (200, 50), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    cv2.putText(img, f"Project: {st.session_state.current_project}", (200, 80), 
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     
     return img
 
-def process_uploaded_video(uploaded_file):
-    """Process uploaded video"""
-    if not CV2_AVAILABLE:
-        st.error("❌ OpenCV not available for video processing")
-        return
-        
-    confidence = st.session_state.detection_settings.get('confidence', 0.5)
-    selected_classes = list(st.session_state.selected_ppe.keys())
-    speed_params = st.session_state.detection_settings.get('speed_params', {'imgsz': 640, 'half': False})
-    
+def analyze_video_compliance(uploaded_file):
+    """Enhanced video analysis with professional reporting"""
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
         tmp_file.write(uploaded_file.read())
         video_path = tmp_file.name
     
     cap = cv2.VideoCapture(video_path)
-    frame_placeholder = st.empty()
-    progress_bar = st.progress(0)
-    status_placeholder = st.empty()
     
-    frame_count = 0
+    if not cap.isOpened():
+        st.error("❌ Cannot open video file for analysis")
+        return
+    
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    
+    st.info(f"📊 Analyzing {total_frames} frames at {fps:.1f} FPS")
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    frame_placeholder = st.empty()
+    
+    compliance_data = []
+    frame_count = 0
     
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
         
-        if st.session_state.model:
+        # Run detection every 10th frame for performance
+        if frame_count % 10 == 0:
             results = st.session_state.model(
-                frame, 
-                conf=confidence,
-                classes=selected_classes,
-                verbose=False,
-                **speed_params
+                frame,
+                conf=st.session_state.detection_settings['confidence'],
+                classes=list(st.session_state.selected_ppe.keys()),
+                verbose=False
             )
             
-            violations = check_for_violations(results, selected_classes)
-            annotated_frame = results[0].plot()
-        else:
-            # Fallback if no model
-            annotated_frame = frame
-            violations = []
-        
-        annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-        
-        frame_placeholder.image(annotated_frame_rgb, caption="SafetyEagle Video Analysis", use_column_width=True)
-        
-        if violations:
-            status_placeholder.warning(f"Violations: {', '.join(violations)}")
-            save_violation(frame, violations)
-        else:
-            status_placeholder.info("No violations detected")
+            violations = check_for_violations(results, list(st.session_state.selected_ppe.keys()))
+            
+            compliance_data.append({
+                'frame': frame_count,
+                'timestamp': frame_count / fps,
+                'violations': len(violations),
+                'missing_ppe': ', '.join(violations) if violations else 'None'
+            })
+            
+            # Display sample frames
+            if frame_count % 100 == 0:
+                annotated_frame = results[0].plot() if results and len(results) > 0 else frame
+                annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+                frame_placeholder.image(annotated_frame_rgb, caption=f"Frame {frame_count}")
         
         frame_count += 1
         progress_bar.progress(frame_count / total_frames)
-        time.sleep(0.03)
+        status_text.text(f"Processed {frame_count}/{total_frames} frames")
     
     cap.release()
     os.unlink(video_path)
-    st.success("✅ Video analysis completed!")
+    
+    # Generate compliance report
+    if compliance_data:
+        df = pd.DataFrame(compliance_data)
+        total_violations = df['violations'].sum()
+        compliance_rate = ((len(df) - len(df[df['violations'] > 0])) / len(df)) * 100
+        
+        st.success(f"✅ Video analysis complete!")
+        st.metric("Overall Compliance Rate", f"{compliance_rate:.1f}%")
+        st.metric("Total Violation Frames", total_violations)
+        
+        # Show compliance trend
+        fig = px.line(df, x='timestamp', y='violations', title="Compliance Trend During Video")
+        st.plotly_chart(fig, use_container_width=True)
 
 def check_for_violations(results, required_classes):
-    """Check for class detection violations"""
+    """Enhanced violation detection"""
     detected_classes = set()
     
     if results and len(results) > 0:
@@ -1107,146 +1178,33 @@ def check_for_violations(results, required_classes):
             class_id = int(box.cls[0])
             detected_classes.add(class_id)
     
-    missing_classes = []
+    missing_ppe = []
     for class_id in required_classes:
         if class_id not in detected_classes:
-            class_name = st.session_state.selected_ppe.get(class_id, f"Class {class_id}")
-            missing_classes.append(class_name)
+            ppe_name = st.session_state.selected_ppe.get(class_id, f"Class {class_id}")
+            missing_ppe.append(ppe_name)
     
-    return missing_classes
+    return missing_ppe
 
 def save_violation(frame, violations):
-    """Save violation record"""
+    """Enhanced violation recording"""
     violation_record = {
         'timestamp': datetime.now(),
-        'missing_classes': ', '.join(violations),
+        'missing_ppe': ', '.join(violations),
         'image': frame.copy(),
-        'selected_classes': list(st.session_state.selected_ppe.values())
+        'project': st.session_state.current_project,
+        'compliance_rate': calculate_compliance_rate()
     }
     st.session_state.violations.append(violation_record)
 
-def show_dashboard():
-    st.markdown('<h2 class="section-header">📊 Safety Dashboard</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.violations:
-        st.info("No safety violations recorded yet. Start monitoring to see data.")
-        return
-    
-    df = pd.DataFrame([
-        {
-            'timestamp': v['timestamp'],
-            'missing_classes': v['missing_classes'],
-            'hour': v['timestamp'].hour,
-            'selected_classes': ', '.join(v['selected_classes'])
-        }
-        for v in st.session_state.violations
-    ])
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Violations", len(st.session_state.violations))
-    
-    with col2:
-        st.metric("Today's Violations", len(df))
-    
-    with col3:
-        most_common = df['missing_classes'].mode()[0] if not df.empty else "None"
-        st.metric("Most Common Issue", most_common)
-    
-    with col4:
-        current_hour = datetime.now().hour
-        hour_violations = len(df[df['hour'] == current_hour])
-        st.metric("This Hour", hour_violations)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Violations by Hour")
-        if not df.empty:
-            hourly_data = df.groupby('hour').size()
-            fig = px.bar(
-                x=hourly_data.index,
-                y=hourly_data.values,
-                labels={'x': 'Hour of Day', 'y': 'Violations'},
-                title="Safety Violations by Hour"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("Violation Distribution")
-        class_counts = {}
-        for missing in df['missing_classes']:
-            items = missing.split(', ')
-            for item in items:
-                class_counts[item] = class_counts.get(item, 0) + 1
-        
-        if class_counts:
-            fig = px.pie(
-                values=list(class_counts.values()),
-                names=list(class_counts.keys()),
-                title="Safety Violation Distribution"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    st.subheader("Recent Safety Violations")
-    for i, violation in enumerate(st.session_state.violations[-5:]):
-        with st.expander(f"Violation {i+1} - {violation['timestamp'].strftime('%H:%M:%S')}"):
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.image(violation['image'], use_column_width=True)
-            with col2:
-                st.write(f"**Missing Safety Items:** {violation['missing_classes']}")
-                st.write(f"**Time:** {violation['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
-
-def show_reports():
-    st.markdown('<h2 class="section-header">📈 Safety Reports & Analytics</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.violations:
-        st.warning("No safety data available for reports. Start monitoring first.")
-        return
-    
-    st.info(f"**Current Safety Monitoring:** {len(st.session_state.selected_ppe)} classes selected")
-    
-    if st.button("📊 Generate Excel Report", type="primary"):
-        generate_excel_report()
-    
-    df = pd.DataFrame([
-        {
-            'Timestamp': v['timestamp'],
-            'Missing Safety Items': v['missing_classes'],
-            'Monitored Classes': v['selected_classes'],
-            'Date': v['timestamp'].date(),
-            'Time': v['timestamp'].time()
-        }
-        for v in st.session_state.violations
-    ])
-    
-    st.dataframe(df, use_container_width=True)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        csv = df.to_csv(index=False)
-        st.download_button(
-            "📥 Download CSV Report",
-            csv,
-            "safetyeagle_violations.csv",
-            "text/csv"
-        )
-    
-    with col2:
-        if st.button("🗑️ Clear All Data"):
-            st.session_state.violations = []
-            st.rerun()
-
 def generate_excel_report():
-    """Generate Excel report"""
+    """Generate professional Excel compliance report"""
     df = pd.DataFrame([
         {
             'Timestamp': v['timestamp'],
-            'Missing_Safety_Items': v['missing_classes'],
-            'Monitored_Classes': v['selected_classes'],
+            'Missing_PPE': v['missing_ppe'],
+            'Project': v['project'],
+            'Compliance_Rate': v['compliance_rate'],
             'Date': v['timestamp'].date(),
             'Time': v['timestamp'].time(),
             'Hour': v['timestamp'].hour
@@ -1256,92 +1214,76 @@ def generate_excel_report():
     
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Violations sheet
         df.to_excel(writer, sheet_name='Safety_Violations', index=False)
         
+        # Summary sheet
         summary_data = {
             'Report_Generated': [datetime.now()],
             'Total_Violations': [len(df)],
-            'Monitoring_Configuration': [f"{len(st.session_state.selected_ppe)} safety classes"],
-            'Most_Common_Violation': [df['Missing_Safety_Items'].mode()[0] if not df.empty else 'None'],
-            'Confidence_Setting': [st.session_state.detection_settings.get('confidence', 0.5)],
-            'Speed_Setting': [st.session_state.detection_settings.get('speed', 'medium')]
+            'Current_Project': [st.session_state.current_project],
+            'Overall_Compliance_Rate': [calculate_compliance_rate()],
+            'Target_Compliance_Rate': [st.session_state.compliance_threshold],
+            'PPE_Items_Monitored': [len(st.session_state.selected_ppe)],
+            'Monitoring_Period': [f"{df['Timestamp'].min()} to {df['Timestamp'].max()}" if not df.empty else 'N/A']
         }
         pd.DataFrame(summary_data).to_excel(writer, sheet_name='Executive_Summary', index=False)
         
+        # Configuration sheet
         config_data = {
-            'Class_ID': list(st.session_state.selected_ppe.keys()),
-            'Class_Name': list(st.session_state.selected_ppe.values())
+            'PPE_Item': list(st.session_state.selected_ppe.values()),
+            'Class_ID': list(st.session_state.selected_ppe.keys())
         }
         pd.DataFrame(config_data).to_excel(writer, sheet_name='Safety_Configuration', index=False)
     
     st.download_button(
-        "📥 Download SafetyEagle Report",
+        "📥 Download Professional Report",
         output.getvalue(),
-        f"safetyeagle_report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+        f"oil_gas_safety_report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-def show_deployment_guide():
-    st.markdown('<h2 class="section-header">🌐 SafetyEagle Deployment Guide</h2>', unsafe_allow_html=True)
+def generate_pdf_summary():
+    """Placeholder for PDF report generation"""
+    st.info("📋 PDF report generation feature coming soon...")
+    # Implementation would use libraries like reportlab or weasyprint
+
+def detect_local_cameras():
+    """Enhanced local camera detection"""
+    st.info("🔍 Scanning for safety monitoring cameras...")
     
-    st.info("🦅 **SafetyEagle AI** - Successfully deployed on Streamlit Cloud!")
+    available_cameras = []
+    max_cameras_to_check = 5
     
-    st.subheader("🚀 Deployment Status: ✅ LIVE")
+    progress_bar = st.progress(0)
     
-    col1, col2, col3 = st.columns(3)
+    for i in range(max_cameras_to_check):
+        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+        if cap.isOpened():
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                available_cameras.append(i)
+                
+                # Show camera details
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    st.image(frame_rgb, caption=f"Camera {i}", use_column_width=True)
+                
+                with col2:
+                    st.success(f"📷 Safety Camera {i} Detected")
+                    st.write(f"**Resolution:** {frame.shape[1]}x{frame.shape[0]}")
+                    st.write(f"**Channels:** {frame.shape[2]}")
+                    st.write(f"**Status:** ✅ Operational")
+            
+            cap.release()
+        
+        progress_bar.progress((i + 1) / max_cameras_to_check)
     
-    with col1:
-        st.markdown("""
-        **✅ Current Features:**
-        - Class selection from YOLO model
-        - IP camera integration
-        - **Mobile camera support** 📱
-        - Video file analysis
-        - Safety violation tracking
-        - Professional reporting
-        - Demo/test mode
-        """)
-    
-    with col2:
-        st.markdown("""
-        **🔧 Technical Stack:**
-        - Streamlit Cloud hosting
-        - YOLOv8 object detection
-        - OpenCV for video processing
-        - Plotly for analytics
-        - Pandas for data handling
-        """)
-    
-    with col3:
-        st.markdown("""
-        **📊 Available Now:**
-        - Real-time monitoring
-        - Mobile safety checks
-        - Safety dashboards
-        - Compliance reports
-        - Multi-class detection
-        - Professional UI/UX
-        """)
-    
-    st.subheader("🎯 Mobile Camera Features")
-    
-    st.markdown("""
-    **📱 New Mobile Camera Integration:**
-    
-    - **Direct Camera Access**: Use your phone's camera for instant safety checks
-    - **Photo Analysis**: Take photos and get immediate safety compliance results
-    - **Upload Existing Photos**: Analyze photos from your gallery
-    - **Mobile-Optimized UI**: Responsive design for all screen sizes
-    - **Instant Violation Alerts**: Get immediate feedback on safety compliance
-    
-    **Usage:**
-    1. Go to "Mobile Camera" tab
-    2. Allow camera permissions
-    3. Take a photo or upload existing
-    4. Get instant safety analysis
-    """)
-    
-    st.success("🎉 **SafetyEagle AI with Mobile Camera is now successfully deployed and operational!**")
+    if available_cameras:
+        st.success(f"🎯 Found {len(available_cameras)} operational camera(s) for safety monitoring")
+    else:
+        st.error("❌ No safety cameras detected. Please check connections and drivers.")
 
 if __name__ == "__main__":
     main()
