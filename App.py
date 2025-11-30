@@ -11,8 +11,6 @@ import tempfile
 from PIL import Image
 import plotly.express as px
 import io
-import requests
-import re
 
 # Set page configuration
 st.set_page_config(
@@ -36,8 +34,6 @@ if 'detection_settings' not in st.session_state:
         'speed': 'medium',
         'frame_skip': 3
     }
-if 'camera_urls' not in st.session_state:
-    st.session_state.camera_urls = []
 
 # Load model with caching
 @st.cache_resource
@@ -56,61 +52,14 @@ def get_available_classes(model):
         return model.names
     return {}
 
-def validate_ip_camera_url(url):
-    """Validate IP camera URL"""
-    if not url:
-        return False, "URL cannot be empty"
-    
-    # Basic URL validation
-    ip_pattern = r'^rtsp://|^http://|^https://'
-    if not re.match(ip_pattern, url):
-        return False, "URL must start with rtsp://, http://, or https://"
-    
-    return True, "URL looks valid"
-
-def test_ip_camera(url, timeout=5):
-    """Test if IP camera URL is accessible"""
-    try:
-        if url.startswith('rtsp://'):
-            # Test RTSP stream
-            cap = cv2.VideoCapture(url)
-            if cap.isOpened():
-                ret, frame = cap.read()
-                cap.release()
-                if ret and frame is not None:
-                    return True, "✅ RTSP camera connected successfully!"
-                else:
-                    return False, "❌ RTSP camera connected but no frame received"
-            else:
-                return False, "❌ Cannot connect to RTSP stream"
-        
-        elif url.startswith(('http://', 'https://')):
-            # Test HTTP stream
-            try:
-                response = requests.get(url, timeout=timeout, stream=True)
-                if response.status_code == 200:
-                    return True, "✅ HTTP camera connected successfully!"
-                else:
-                    return False, f"❌ HTTP camera returned status code: {response.status_code}"
-            except requests.exceptions.RequestException as e:
-                return False, f"❌ HTTP camera connection failed: {e}"
-        
-        else:
-            return False, "❌ Unsupported URL protocol"
-    
-    except Exception as e:
-        return False, f"❌ Camera test failed: {e}"
-
 def main():
-    st.title("🌐 PPE Safety Monitoring System")
+    st.title("🛡️ PPE Safety Monitoring System")
     
     # Sidebar
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Camera Setup", "Settings", "Live Monitoring", "Dashboard", "Reports", "Deployment"])
+    page = st.sidebar.radio("Go to", ["Settings", "Live Monitoring", "Dashboard", "Reports"])
     
-    if page == "Camera Setup":
-        show_camera_setup()
-    elif page == "Settings":
+    if page == "Settings":
         show_settings()
     elif page == "Live Monitoring":
         show_live_monitoring()
@@ -118,146 +67,6 @@ def main():
         show_dashboard()
     elif page == "Reports":
         show_reports()
-    elif page == "Deployment":
-        show_deployment_guide()
-
-def show_camera_setup():
-    st.header("📷 Camera Configuration")
-    
-    st.subheader("1. Local Webcam")
-    st.info("Use your computer's built-in or USB camera")
-    
-    if st.button("🔍 Detect Local Cameras"):
-        detect_local_cameras()
-    
-    st.subheader("2. IP Camera / Network Stream")
-    st.info("Connect to IP cameras, RTSP streams, or network cameras")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        camera_url = st.text_input(
-            "IP Camera URL:",
-            placeholder="rtsp://username:password@ip:port/stream or http://ip:port/video"
-        )
-    
-    with col2:
-        st.write("")  # Spacing
-        st.write("")  # Spacing
-        if st.button("🔗 Test Connection"):
-            if camera_url:
-                is_valid, message = validate_ip_camera_url(camera_url)
-                if is_valid:
-                    with st.spinner("Testing camera connection..."):
-                        success, result = test_ip_camera(camera_url)
-                    if success:
-                        st.success(result)
-                        # Add to saved URLs if not already there
-                        if camera_url not in st.session_state.camera_urls:
-                            st.session_state.camera_urls.append(camera_url)
-                            st.success("✅ Camera added to saved list!")
-                    else:
-                        st.error(result)
-                else:
-                    st.error(message)
-            else:
-                st.error("Please enter a camera URL")
-    
-    # Common camera URL examples
-    with st.expander("📋 Common Camera URL Formats"):
-        st.markdown("""
-        **RTSP Examples:**
-        - `rtsp://username:password@192.168.1.100:554/stream1`
-        - `rtsp://admin:password@camera_ip:554/11`
-        - `rtsp://192.168.1.100:8554/live`
-        
-        **HTTP Examples:**
-        - `http://192.168.1.100:8080/video`
-        - `http://192.168.1.100:4747/video`
-        - `http://ip_address:port/stream`
-        
-        **Popular Camera Brands:**
-        - **Hikvision:** `rtsp://admin:password@ip:554/Streaming/Channels/101`
-        - **Dahua:** `rtsp://admin:password@ip:554/cam/realmonitor?channel=1&subtype=0`
-        - **Axis:** `rtsp://root:pass@ip/axis-media/media.amp`
-        """)
-    
-    # Saved camera URLs
-    if st.session_state.camera_urls:
-        st.subheader("💾 Saved Camera URLs")
-        for i, url in enumerate(st.session_state.camera_urls):
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                st.code(url, language="text")
-            with col2:
-                if st.button("🔗 Test", key=f"test_{i}"):
-                    with st.spinner("Testing..."):
-                        success, result = test_ip_camera(url)
-                    if success:
-                        st.success(result)
-                    else:
-                        st.error(result)
-            with col3:
-                if st.button("🗑️ Remove", key=f"remove_{i}"):
-                    st.session_state.camera_urls.pop(i)
-                    st.rerun()
-    
-    st.subheader("3. Mobile Phone as Camera")
-    st.info("Use your smartphone as a wireless camera")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **For Android:**
-        1. Install **IP Webcam** app
-        2. Start server in the app
-        3. Note the IP address shown
-        4. Use URL like: `http://192.168.1.100:8080/video`
-        """)
-    
-    with col2:
-        st.markdown("""
-        **For iPhone:**
-        1. Install **IP Camera** app
-        2. Configure the stream settings
-        3. Start the server
-        4. Use the provided RTSP or HTTP URL
-        """)
-    
-    st.subheader("4. Video File Upload")
-    st.info("Use pre-recorded videos for testing")
-    
-    uploaded_file = st.file_uploader("Upload video file", type=['mp4', 'avi', 'mov', 'mkv'])
-    if uploaded_file:
-        st.success(f"✅ Video uploaded: {uploaded_file.name}")
-
-def detect_local_cameras():
-    """Detect available local cameras"""
-    st.info("Scanning for local cameras...")
-    
-    available_cameras = []
-    max_cameras_to_check = 5
-    
-    for i in range(max_cameras_to_check):
-        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
-        if cap.isOpened():
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                available_cameras.append(i)
-                st.success(f"📷 Camera found at index {i} - {frame.shape[1]}x{frame.shape[0]}")
-                
-                # Show preview
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                st.image(frame_rgb, caption=f"Camera {i} Preview", use_column_width=True)
-            cap.release()
-        else:
-            st.warning(f"❌ No camera at index {i}")
-    
-    if available_cameras:
-        st.success(f"🎯 Found {len(available_cameras)} camera(s): {available_cameras}")
-    else:
-        st.error("❌ No local cameras found!")
 
 def show_settings():
     st.header("⚙️ Detection Settings")
@@ -283,7 +92,7 @@ def show_settings():
     # PPE selection
     col1, col2, col3 = st.columns(3)
     
-    # Common PPE items mapping
+    # Common PPE items - you can customize this mapping
     ppe_mapping = {
         'Hard Hat/Helmet': 'helmet',
         'Safety Vest': 'vest', 
@@ -299,6 +108,7 @@ def show_settings():
     with col1:
         for ppe_display in list(ppe_mapping.keys())[:3]:
             ppe_key = ppe_mapping[ppe_display]
+            # Find matching class in model
             matching_classes = [cls_id for cls_id, name in available_classes.items() 
                               if ppe_key in name.lower() or name.lower() in ppe_key]
             
@@ -344,7 +154,7 @@ def show_settings():
                 if is_selected:
                     selected_ppe[class_id] = ppe_display
     
-    # Show available classes
+    # Show available classes for reference
     with st.expander("📋 All Available Classes in Model"):
         st.write("Your model can detect these classes:")
         for class_id, class_name in available_classes.items():
@@ -381,7 +191,7 @@ def show_settings():
             help="Process every Nth frame (1=process all frames, 10=process every 10th frame)"
         )
     
-    # Map speed settings
+    # Map speed settings to actual parameters
     speed_params = {
         "fast": {"imgsz": 320, "half": True},
         "medium": {"imgsz": 640, "half": False},
@@ -406,17 +216,20 @@ def show_settings():
         st.write(f"**Speed:** {speed_setting.title()}")
         st.write(f"**Frame Skip:** {frame_skip}")
     
+    # Warning if no PPE selected
     if not selected_ppe:
         st.warning("⚠️ Please select at least one PPE item to monitor.")
 
 def show_live_monitoring():
     st.header("📹 Live PPE Monitoring")
     
+    # Check if settings are configured
     if not st.session_state.selected_ppe:
         st.warning("⚠️ Please configure detection settings first!")
         st.info("Go to the **Settings** page to select which PPE items to monitor.")
         return
     
+    # Initialize model
     if st.session_state.model is None:
         st.session_state.model = load_model()
     
@@ -433,25 +246,9 @@ def show_live_monitoring():
         # Camera options
         camera_mode = st.radio(
             "Select Input Source:",
-            ["Local Webcam", "IP Camera", "Test Mode", "Upload Video"],
-            help="Choose your camera source"
+            ["Webcam", "Test Mode", "Upload Video"],
+            help="Webcam: Use your camera, Test Mode: Simulated detection, Upload: Use video file"
         )
-        
-        # IP Camera selection
-        if camera_mode == "IP Camera":
-            if st.session_state.camera_urls:
-                selected_url = st.selectbox(
-                    "Select Saved Camera:",
-                    st.session_state.camera_urls,
-                    help="Choose from your saved camera URLs"
-                )
-                new_url = st.text_input("Or enter new camera URL:")
-                camera_url = new_url if new_url else selected_url
-            else:
-                camera_url = st.text_input(
-                    "Enter IP Camera URL:",
-                    placeholder="rtsp://username:password@ip:port/stream"
-                )
         
         # Performance info
         st.info(f"""
@@ -463,7 +260,7 @@ def show_live_monitoring():
         """)
         
         # Start buttons
-        if camera_mode == "Local Webcam":
+        if camera_mode == "Webcam":
             if st.button("🎥 Start Webcam", type="primary"):
                 st.session_state.monitoring = True
                 start_webcam_monitoring()
@@ -471,18 +268,6 @@ def show_live_monitoring():
             if st.button("⏹️ Stop Monitoring"):
                 st.session_state.monitoring = False
                 st.rerun()
-                
-        elif camera_mode == "IP Camera":
-            if camera_url:
-                if st.button("🌐 Start IP Camera", type="primary"):
-                    st.session_state.monitoring = True
-                    start_ip_camera_monitoring(camera_url)
-                
-                if st.button("⏹️ Stop Monitoring"):
-                    st.session_state.monitoring = False
-                    st.rerun()
-            else:
-                st.warning("Please enter an IP camera URL first")
                 
         elif camera_mode == "Test Mode":
             if st.button("🔄 Start Test Mode", type="primary"):
@@ -505,62 +290,39 @@ def show_live_monitoring():
         st.metric("Selected PPE Items", len(st.session_state.selected_ppe))
 
 def start_webcam_monitoring():
-    """Local webcam monitoring"""
-    st.info("🚀 Starting local webcam monitoring...")
+    """Optimized webcam monitoring with performance settings"""
+    st.info("🚀 Starting optimized webcam monitoring...")
     
+    # Get settings
     confidence = st.session_state.detection_settings['confidence']
     frame_skip = st.session_state.detection_settings['frame_skip']
     speed_params = st.session_state.detection_settings['speed_params']
     selected_classes = list(st.session_state.selected_ppe.keys())
     
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    # Try different camera backends
+    backends = [cv2.CAP_DSHOW, cv2.CAP_ANY]
+    cap = None
     
-    if not cap.isOpened():
+    for backend in backends:
+        try:
+            cap = cv2.VideoCapture(0, backend)
+            if cap.isOpened():
+                break
+        except:
+            continue
+    
+    if cap is None or not cap.isOpened():
         st.error("❌ Cannot access webcam. Switching to Test Mode...")
         start_test_mode()
         return
     
-    # Optimize camera settings
+    # Optimize camera settings for speed
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 30)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer for lower latency
     
-    run_monitoring_loop(cap, "Local Webcam", selected_classes, confidence, frame_skip, speed_params)
-
-def start_ip_camera_monitoring(camera_url):
-    """IP camera monitoring"""
-    st.info(f"🌐 Connecting to IP camera: {camera_url}")
-    
-    confidence = st.session_state.detection_settings['confidence']
-    frame_skip = st.session_state.detection_settings['frame_skip']
-    speed_params = st.session_state.detection_settings['speed_params']
-    selected_classes = list(st.session_state.selected_ppe.keys())
-    
-    # Test connection first
-    success, message = test_ip_camera(camera_url)
-    if not success:
-        st.error(f"❌ {message}")
-        st.session_state.monitoring = False
-        return
-    
-    st.success(message)
-    
-    # Open camera stream
-    if camera_url.startswith('rtsp://'):
-        cap = cv2.VideoCapture(camera_url)
-    else:
-        cap = cv2.VideoCapture(camera_url)
-    
-    if not cap.isOpened():
-        st.error("❌ Failed to open camera stream")
-        st.session_state.monitoring = False
-        return
-    
-    run_monitoring_loop(cap, f"IP Camera: {camera_url}", selected_classes, confidence, frame_skip, speed_params)
-
-def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_skip, speed_params):
-    """Generic monitoring loop for all camera types"""
+    # Create placeholders
     frame_placeholder = st.empty()
     status_placeholder = st.empty()
     performance_placeholder = st.empty()
@@ -570,19 +332,20 @@ def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_sk
     last_fps_update = time.time()
     fps = 0
     
-    while st.session_state.monitoring and cap.isOpened():
+    while st.session_state.monitoring:
         try:
             start_time = time.time()
             ret, frame = cap.read()
             
             if not ret:
-                st.error("❌ Failed to read frame from camera")
+                st.error("Failed to read from camera")
                 break
             
             frame_count += 1
             
+            # Skip frames based on setting for better performance
             if frame_count % frame_skip == 0:
-                # Run detection
+                # Run optimized detection
                 results = st.session_state.model(
                     frame, 
                     conf=confidence,
@@ -591,18 +354,25 @@ def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_sk
                     **speed_params
                 )
                 
+                # Check for violations with selected PPE
                 violations = check_for_violations(results, selected_classes)
+                
+                # Draw results
                 annotated_frame = results[0].plot()
                 
                 # Add performance overlay
                 cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(annotated_frame, f"Source: {source_name}", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                cv2.putText(annotated_frame, f"Frame: {frame_count}", (10, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
+                # Convert to RGB for Streamlit
                 annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                frame_placeholder.image(annotated_frame_rgb, caption=source_name, use_column_width=True)
                 
+                # Display
+                frame_placeholder.image(annotated_frame_rgb, caption="Live Camera Feed", use_column_width=True)
+                
+                # Update status
                 if violations:
                     status_placeholder.warning(f"🚨 Missing: {', '.join(violations)}")
                     save_violation(frame, violations)
@@ -613,6 +383,7 @@ def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_sk
             processing_time = time.time() - start_time
             processing_times.append(processing_time)
             
+            # Update FPS every second
             if time.time() - last_fps_update > 1.0:
                 if processing_times:
                     avg_time = np.mean(processing_times)
@@ -620,27 +391,30 @@ def run_monitoring_loop(cap, source_name, selected_classes, confidence, frame_sk
                     processing_times = []
                 last_fps_update = time.time()
                 
+                # Update performance stats
                 performance_placeholder.info(
                     f"**Performance:** {fps:.1f} FPS | "
                     f"Frame skip: {frame_skip} | "
                     f"Processing: {avg_time*1000:.1f}ms"
                 )
             
-            time.sleep(0.01)
-            
         except Exception as e:
-            st.error(f"Monitoring error: {e}")
+            st.error(f"Camera error: {e}")
             break
     
-    cap.release()
+    # Cleanup
+    if cap:
+        cap.release()
 
 def start_test_mode():
-    """Test mode with simulation"""
+    """Optimized test mode with customizable PPE simulation"""
     st.success("🎯 Test Mode Active - Custom PPE Detection Simulation")
     
+    # Get settings
     selected_ppe = st.session_state.selected_ppe
     selected_classes = list(selected_ppe.keys())
     
+    # Create placeholders
     frame_placeholder = st.empty()
     status_placeholder = st.empty()
     info_placeholder = st.empty()
@@ -649,7 +423,10 @@ def start_test_mode():
     
     while st.session_state.monitoring:
         try:
+            # Create test image based on selected PPE
             test_image = create_custom_test_image(frame_count, selected_ppe)
+            
+            # Run detection
             results = st.session_state.model(
                 test_image, 
                 conf=st.session_state.detection_settings['confidence'],
@@ -657,18 +434,27 @@ def start_test_mode():
                 verbose=False
             )
             
+            # Check for violations with selected PPE
             violations = check_for_violations(results, selected_classes)
+            
+            # Draw results
             annotated_frame = results[0].plot()
             
+            # Add info overlay
             cv2.putText(annotated_frame, "TEST MODE", (10, 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
             
             annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+            
+            # Display
             frame_placeholder.image(annotated_frame_rgb, caption="Test Mode - Custom PPE Detection", use_column_width=True)
             
+            # Update status
             if violations:
                 status_placeholder.warning(f"🚨 Missing: {', '.join(violations)}")
                 info_placeholder.info("Simulation: PPE violations detected")
+                
+                # Save sample violation occasionally
                 if frame_count % 30 == 0:
                     save_violation(test_image, violations)
             else:
@@ -676,34 +462,46 @@ def start_test_mode():
                 info_placeholder.info("Simulation: All safety equipment present")
             
             frame_count += 1
-            time.sleep(0.3)
+            time.sleep(0.3)  # Controlled update rate
             
         except Exception as e:
             st.error(f"Test mode error: {e}")
             break
 
 def create_custom_test_image(frame_count, selected_ppe):
-    """Create test image based on selected PPE"""
+    """Create test image based on selected PPE items"""
+    # Create background
     img = np.ones((480, 640, 3), dtype=np.uint8) * 150
+    
+    # Draw person
     cv2.rectangle(img, (200, 100), (440, 400), (0, 255, 0), 2)
     cv2.putText(img, "Person", (250, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     
+    # Get selected PPE names for display
     ppe_names = list(selected_ppe.values())
+    
+    # Simulate different scenarios
     scenario = (frame_count // 40) % (len(ppe_names) + 1)
+    
+    # Default: All PPE present
     missing_items = []
     
     if scenario > 0:
+        # Missing one specific PPE item (rotate through selected items)
         missing_index = (scenario - 1) % len(ppe_names)
         missing_items = [ppe_names[missing_index]]
     
+    # Draw PPE items that are present
     y_pos = 50
     for i, ppe_name in enumerate(ppe_names):
         if ppe_name not in missing_items:
+            # Draw the PPE item
             color = [(255, 0, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)][i % 5]
             cv2.rectangle(img, (250, y_pos), (390, y_pos + 40), color, -1)
             cv2.putText(img, ppe_name, (260, y_pos + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             y_pos += 50
     
+    # Show missing items
     if missing_items:
         cv2.putText(img, f"MISSING: {', '.join(missing_items)}", 
                    (200, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -711,16 +509,20 @@ def create_custom_test_image(frame_count, selected_ppe):
     return img
 
 def process_uploaded_video(uploaded_file):
-    """Process uploaded video"""
+    """Process uploaded video file with custom settings"""
+    # Get settings
     confidence = st.session_state.detection_settings['confidence']
     selected_classes = list(st.session_state.selected_ppe.keys())
     speed_params = st.session_state.detection_settings['speed_params']
     
+    # Save uploaded file temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
         tmp_file.write(uploaded_file.read())
         video_path = tmp_file.name
     
+    # Process video
     cap = cv2.VideoCapture(video_path)
+    
     frame_placeholder = st.empty()
     progress_bar = st.progress(0)
     status_placeholder = st.empty()
@@ -733,6 +535,7 @@ def process_uploaded_video(uploaded_file):
         if not ret:
             break
         
+        # Process frame with custom settings
         results = st.session_state.model(
             frame, 
             conf=confidence,
@@ -745,16 +548,20 @@ def process_uploaded_video(uploaded_file):
         annotated_frame = results[0].plot()
         annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
         
+        # Display
         frame_placeholder.image(annotated_frame_rgb, caption="Video Processing", use_column_width=True)
         
+        # Update status
         if violations:
             status_placeholder.warning(f"Violations: {', '.join(violations)}")
             save_violation(frame, violations)
         else:
             status_placeholder.info("No violations detected")
         
+        # Update progress
         frame_count += 1
         progress_bar.progress(frame_count / total_frames)
+        
         time.sleep(0.03)
     
     cap.release()
@@ -762,7 +569,7 @@ def process_uploaded_video(uploaded_file):
     st.success("Video processing completed!")
 
 def check_for_violations(results, required_classes):
-    """Check for PPE violations"""
+    """Check detection results for specific PPE violations"""
     detected_classes = set()
     
     if results and len(results) > 0:
@@ -770,6 +577,7 @@ def check_for_violations(results, required_classes):
             class_id = int(box.cls[0])
             detected_classes.add(class_id)
     
+    # Only check for violations in selected PPE items
     missing_ppe = []
     for class_id in required_classes:
         if class_id not in detected_classes:
@@ -795,6 +603,7 @@ def show_dashboard():
         st.info("No violations recorded yet. Start monitoring to see data.")
         return
     
+    # Convert violations to DataFrame
     df = pd.DataFrame([
         {
             'timestamp': v['timestamp'],
@@ -805,6 +614,7 @@ def show_dashboard():
         for v in st.session_state.violations
     ])
     
+    # Metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -822,6 +632,7 @@ def show_dashboard():
         hour_violations = len(df[df['hour'] == current_hour])
         st.metric("This Hour", hour_violations)
     
+    # Charts
     col1, col2 = st.columns(2)
     
     with col1:
@@ -850,6 +661,7 @@ def show_dashboard():
             )
             st.plotly_chart(fig, use_container_width=True)
     
+    # Recent violations with configuration context
     st.subheader("Recent Violations")
     for i, violation in enumerate(st.session_state.violations[-5:]):
         with st.expander(f"Violation {i+1} - {violation['timestamp'].strftime('%H:%M:%S')}"):
@@ -868,11 +680,15 @@ def show_reports():
         st.warning("No data available for reports. Start monitoring first.")
         return
     
+    # Configuration context
     st.info(f"**Current Monitoring Configuration:** {', '.join(st.session_state.selected_ppe.values())}")
     
+    # Generate report
     if st.button("📊 Generate Excel Report", type="primary"):
         generate_excel_report()
     
+    # Data table
+    st.subheader("Violation Data")
     df = pd.DataFrame([
         {
             'Timestamp': v['timestamp'],
@@ -886,6 +702,7 @@ def show_reports():
     
     st.dataframe(df, use_container_width=True)
     
+    # Export options
     col1, col2 = st.columns(2)
     
     with col1:
@@ -903,7 +720,7 @@ def show_reports():
             st.rerun()
 
 def generate_excel_report():
-    """Generate Excel report"""
+    """Generate comprehensive Excel report"""
     df = pd.DataFrame([
         {
             'Timestamp': v['timestamp'],
@@ -916,10 +733,13 @@ def generate_excel_report():
         for v in st.session_state.violations
     ])
     
+    # Create Excel file in memory
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Violations sheet
         df.to_excel(writer, sheet_name='Violations', index=False)
         
+        # Summary sheet
         summary_data = {
             'Total_Violations': [len(df)],
             'Date_Generated': [datetime.now()],
@@ -930,136 +750,20 @@ def generate_excel_report():
         }
         pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
         
+        # Configuration sheet
         config_data = {
             'PPE_Item': list(st.session_state.selected_ppe.values()),
             'Class_ID': list(st.session_state.selected_ppe.keys())
         }
         pd.DataFrame(config_data).to_excel(writer, sheet_name='Configuration', index=False)
     
+    # Download button
     st.download_button(
         "📥 Download Excel Report",
         output.getvalue(),
         f"ppe_report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "application/vnd.openformats-officedocument.spreadsheetml.sheet"
     )
-
-def show_deployment_guide():
-    st.header("🌐 Deployment Guide")
-    
-    st.subheader("1. Free Deployment Options")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        **Streamlit Community Cloud**
-        - ✅ Completely free
-        - ✅ Easy deployment
-        - ✅ Public access
-        - ❌ Limited resources
-        - ❌ No GPU acceleration
-        
-        [Deploy Now](https://streamlit.io/cloud)
-        """)
-    
-    with col2:
-        st.markdown("""
-        **Hugging Face Spaces**
-        - ✅ Free tier available
-        - ✅ Easy Git integration
-        - ✅ Community sharing
-        - ❌ Limited compute
-        - ❌ Slower startup
-        
-        [Deploy Now](https://huggingface.co/spaces)
-        """)
-    
-    with col3:
-        st.markdown("""
-        **Railway**
-        - ✅ Free tier available
-        - ✅ Easy deployment
-        - ✅ Good performance
-        - ❌ Limited hours/month
-        - ❌ Credit card required
-        
-        [Deploy Now](https://railway.app)
-        """)
-    
-    st.subheader("2. Step-by-Step Deployment (Streamlit Cloud)")
-    
-    st.markdown("""
-    **Step 1: Prepare Your Files**
-    ```
-    your-project-folder/
-    ├── app.py                    # This Streamlit app
-    ├── requirements.txt          # Dependencies list
-    ├── best.pt                  # Your trained model
-    └── README.md                # Optional description
-    ```
-    
-    **Step 2: Create requirements.txt**
-    ```txt
-    streamlit
-    opencv-python
-    ultralytics
-    pandas
-    numpy
-    pillow
-    plotly
-    requests
-    ```
-    
-    **Step 3: Deploy to Streamlit Cloud**
-    1. Go to [share.streamlit.io](https://share.streamlit.io)
-    2. Sign in with GitHub
-    3. Connect your repository
-    4. Set main file path to `app.py`
-    5. Click "Deploy"
-    """)
-    
-    st.subheader("3. Configuration for Online Access")
-    
-    with st.expander("🔧 Advanced Configuration"):
-        st.markdown("""
-        **For IP Camera Access:**
-        - Ensure your IP cameras are accessible from the internet
-        - Use public IP addresses or domain names
-        - Configure port forwarding on your router if needed
-        
-        **Security Considerations:**
-        - Use strong passwords for IP cameras
-        - Consider VPN for secure access
-        - Regular security updates
-        """)
-    
-    st.subheader("4. Access from Anywhere")
-    
-    st.markdown("""
-    Once deployed, your app will be available at:
-    `https://your-app-name.streamlit.app`
-    
-    **Share this URL** with anyone who needs access!
-    
-    **Mobile Access:**
-    - The app works on mobile browsers
-    - No app installation required
-    - Responsive design for all devices
-    """)
-    
-    st.subheader("5. Troubleshooting")
-    
-    st.markdown("""
-    **Common Issues:**
-    - **Model too large**: Streamlit Cloud has 1GB limit
-    - **Camera not working**: IP cameras must be publicly accessible
-    - **Slow performance**: Use smaller model or reduce frame rate
-    
-    **Solutions:**
-    - Compress your model file
-    - Use public IP cameras for testing
-    - Optimize detection settings
-    """)
 
 if __name__ == "__main__":
     main()
