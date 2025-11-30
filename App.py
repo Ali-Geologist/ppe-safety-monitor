@@ -334,16 +334,19 @@ def create_compliance_gauge(percentage, title):
     percentage = max(0, min(100, percentage))
     color = "#22c55e" if percentage >= 90 else "#f59e0b" if percentage >= 80 else "#ef4444"
     
+    # Fix the conic gradient - ensure it doesn't exceed 100%
+    fill_percentage = min(percentage, 100)
+    
     gauge_html = f"""
     <div class="chart-container" style="text-align: center;">
         <h4>{title}</h4>
         <div style="position: relative; width: 150px; height: 150px; margin: 0 auto;">
             <div style="position: absolute; top: 0; left: 0; width: 150px; height: 150px; 
-                      border-radius: 50%; background: conic-gradient({color} 0% {percentage}%, #e5e7eb {percentage}% 100%);">
+                      border-radius: 50%; background: conic-gradient({color} 0% {fill_percentage}%, #e5e7eb {fill_percentage}% 100%);">
             </div>
             <div style="position: absolute; top: 15px; left: 15px; width: 120px; height: 120px; 
                       border-radius: 50%; background: white; display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 2rem; font-weight: bold; color: {color};">{percentage:.0f}%</span>
+                <span style="font-size: 2rem; font-weight: bold; color: {color};">{int(percentage)}%</span>
             </div>
         </div>
     </div>
@@ -390,33 +393,47 @@ def get_violation_stats():
     return ppe_violations, time_violations, daily_violations
 
 def simulate_ppe_detection_with_boxes(image):
-    """Simulate PPE detection with bounding boxes - FIXED VERSION"""
+    """Simulate PPE detection with bounding boxes - SIMPLIFIED VERSION"""
     try:
-        # Convert PIL image to numpy array for OpenCV
+        # Convert PIL image to numpy array
         img_array = np.array(image)
         
-        # Convert RGB to BGR for OpenCV if needed
-        if len(img_array.shape) == 3 and img_array.shape[2] == 3:
-            # Check if it's already BGR or RGB
-            if img_array[0, 0, 0] == image.getpixel((0, 0))[0]:  # It's RGB
-                img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        # Create a copy to draw on
+        if len(img_array.shape) == 3:
+            # Color image
+            img_with_boxes = img_array.copy()
+        else:
+            # Convert grayscale to color
+            img_with_boxes = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGB)
         
         # Get image dimensions
-        height, width = img_array.shape[:2]
+        height, width = img_with_boxes.shape[:2]
         
         # Simulate detection results with bounding boxes
         detection_results = []
         
+        # Colors for different PPE types
+        colors = {
+            "Hard Hat": (0, 255, 0),  # Green
+            "Safety Glasses": (255, 255, 0),  # Yellow
+            "High-Vis Vest": (255, 165, 0),  # Orange
+            "Safety Gloves": (0, 255, 255),  # Cyan
+            "Safety Boots": (255, 0, 255),  # Magenta
+            "Hearing Protection": (128, 0, 128),  # Purple
+            "Face Shield": (255, 0, 0),  # Red
+            "Respirator": (0, 0, 255),  # Blue
+        }
+        
         # Simulate detecting some PPE items based on selected PPE
+        import random
         for ppe_id, ppe_name in st.session_state.selected_ppe.items():
-            # Random chance to detect each PPE item (simulating AI detection)
-            import random
+            # Random chance to detect each PPE item
             if random.random() > 0.3:  # 70% detection rate
                 # Generate random bounding box (ensure it's within image bounds)
-                box_width = random.randint(80, 120)
-                box_height = random.randint(80, 120)
-                x1 = random.randint(50, width - box_width - 50)
-                y1 = random.randint(50, height - box_height - 50)
+                box_width = random.randint(80, 150)
+                box_height = random.randint(80, 150)
+                x1 = random.randint(20, width - box_width - 20)
+                y1 = random.randint(20, height - box_height - 20)
                 x2 = x1 + box_width
                 y2 = y1 + box_height
                 
@@ -427,45 +444,28 @@ def simulate_ppe_detection_with_boxes(image):
                     'confidence': confidence,
                     'bbox': [x1, y1, x2, y2]
                 })
+                
+                # Draw bounding box
+                color = colors.get(ppe_name, (255, 255, 255))
+                cv2.rectangle(img_with_boxes, (x1, y1), (x2, y2), color, 3)
+                
+                # Draw label background
+                label = f"{ppe_name}: {confidence:.2f}"
+                label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                label_y = max(y1 - 10, label_size[1] + 5)
+                cv2.rectangle(img_with_boxes, 
+                            (x1, label_y - label_size[1] - 5), 
+                            (x1 + label_size[0], label_y), 
+                            color, -1)
+                
+                # Draw label text
+                cv2.putText(img_with_boxes, label, (x1, label_y - 5), 
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
-        # Draw bounding boxes on the image
-        for detection in detection_results:
-            x1, y1, x2, y2 = detection['bbox']
-            confidence = detection['confidence']
-            class_name = detection['class']
-            
-            # Choose color based on PPE type
-            colors = {
-                "Hard Hat": (0, 255, 0),  # Green
-                "Safety Glasses": (255, 255, 0),  # Yellow
-                "High-Vis Vest": (255, 165, 0),  # Orange
-                "Safety Gloves": (0, 255, 255),  # Cyan
-                "Safety Boots": (255, 0, 255),  # Magenta
-                "Hearing Protection": (128, 0, 128),  # Purple
-                "Face Shield": (255, 0, 0),  # Red
-                "Respirator": (0, 0, 255),  # Blue
-            }
-            
-            color = colors.get(class_name, (255, 255, 255))
-            
-            # Draw bounding box
-            cv2.rectangle(img_array, (x1, y1), (x2, y2), color, 3)
-            
-            # Draw label background
-            label = f"{class_name}: {confidence:.2f}"
-            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-            cv2.rectangle(img_array, (x1, y1 - label_size[1] - 10), (x1 + label_size[0], y1), color, -1)
-            
-            # Draw label text
-            cv2.putText(img_array, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
-        # Convert back to RGB for display
-        img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
-        
-        return Image.fromarray(img_array), detection_results
+        return Image.fromarray(img_with_boxes), detection_results
         
     except Exception as e:
-        st.error(f"Error in detection simulation: {e}")
+        st.error(f"Error in detection simulation: {str(e)}")
         # Return original image if there's an error
         return image, []
 
@@ -604,7 +604,7 @@ def show_live_monitoring():
                     # Simulate processing time for real-time feel
                     time.sleep(0.5)
                     
-                    # Get image with bounding boxes - FIXED CALL
+                    # Get image with bounding boxes
                     processed_image, detections = simulate_ppe_detection_with_boxes(camera_image)
                     
                     # Display processed image with detections
@@ -754,7 +754,7 @@ def show_compliance_analytics(compliance_rate, daily_violations):
     col_chart1, col_chart2 = st.columns(2)
     
     with col_chart1:
-        # Compliance gauge - FIXED: Ensure percentage is valid
+        # Compliance gauge - FIXED
         st.markdown(create_compliance_gauge(compliance_rate, "Overall Compliance Rate"))
     
     with col_chart2:
@@ -941,73 +941,6 @@ def show_recent_alerts():
             <p style="color: #15803d;">Excellent safety compliance record!</p>
         </div>
         """, unsafe_allow_html=True)
-
-def generate_safety_report():
-    """Generate a comprehensive safety report based on actual data"""
-    compliance_rate = calculate_compliance_rate()
-    total_violations = len(st.session_state.violations)
-    ppe_violations, time_violations, _ = get_violation_stats()
-    
-    report = f"""
-    SAFETYEAGLE AI - SAFETY MONITORING REPORT
-    =========================================
-    
-    Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-    
-    PROJECT INFORMATION
-    -------------------
-    Company: {st.session_state.project_info['company_name'] or 'Not specified'}
-    Project: {st.session_state.project_info['project_name'] or 'Not specified'}
-    Safety Engineer: {st.session_state.project_info['engineer_name'] or 'Not specified'}
-    Work Type: {st.session_state.project_info['work_type']}
-    Workers: {st.session_state.project_info['workers_assigned']}
-    
-    SAFETY PERFORMANCE SUMMARY
-    --------------------------
-    Overall Compliance Rate: {compliance_rate:.1f}%
-    Total Violations: {total_violations}
-    PPE Items Monitored: {len(st.session_state.selected_ppe)}
-    Monitoring Period: Since first violation recorded
-    
-    VIOLATION ANALYSIS
-    ------------------
-    """
-    
-    if ppe_violations:
-        report += "PPE Violation Distribution:\n"
-        for ppe, count in ppe_violations.items():
-            report += f"  - {ppe}: {count} violations\n"
-    else:
-        report += "No PPE violations recorded.\n"
-    
-    report += f"""
-    
-    RECOMMENDATIONS
-    ---------------
-    """
-    
-    if compliance_rate >= 95:
-        report += "1. Continue current excellent safety protocols\n"
-    elif compliance_rate >= 80:
-        report += "1. Conduct refresher PPE training sessions\n"
-    else:
-        report += "1. Implement immediate safety intervention program\n"
-    
-    report += "2. Regular safety equipment inspections\n"
-    report += "3. Ongoing worker safety awareness programs\n"
-    report += "4. Continuous monitoring and improvement\n"
-    
-    report += f"""
-    
-    MONITORED PPE ITEMS
-    -------------------
-    {', '.join(st.session_state.selected_ppe.values()) if st.session_state.selected_ppe else 'No PPE items selected'}
-    
-    ---
-    Generated by SafetyEagle AI
-    Confidential Safety Report
-    """
-    return report
 
 if __name__ == "__main__":
     main()
