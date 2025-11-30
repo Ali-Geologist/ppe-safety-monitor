@@ -330,6 +330,8 @@ def create_simple_bar_chart(data, title, color="#2563eb"):
 
 def create_compliance_gauge(percentage, title):
     """Create a simple gauge chart using HTML/CSS"""
+    # Ensure percentage is between 0 and 100
+    percentage = max(0, min(100, percentage))
     color = "#22c55e" if percentage >= 90 else "#f59e0b" if percentage >= 80 else "#ef4444"
     
     gauge_html = f"""
@@ -341,7 +343,7 @@ def create_compliance_gauge(percentage, title):
             </div>
             <div style="position: absolute; top: 15px; left: 15px; width: 120px; height: 120px; 
                       border-radius: 50%; background: white; display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 2rem; font-weight: bold; color: {color};">{percentage}%</span>
+                <span style="font-size: 2rem; font-weight: bold; color: {color};">{percentage:.0f}%</span>
             </div>
         </div>
     </div>
@@ -388,74 +390,84 @@ def get_violation_stats():
     return ppe_violations, time_violations, daily_violations
 
 def simulate_ppe_detection_with_boxes(image):
-    """Simulate PPE detection with bounding boxes"""
-    # Convert PIL image to numpy array for OpenCV
-    img_array = np.array(image)
-    
-    # Convert RGB to BGR for OpenCV
-    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
-        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-    
-    # Get image dimensions
-    height, width = img_array.shape[:2]
-    
-    # Simulate detection results with bounding boxes
-    detection_results = []
-    
-    # Simulate detecting some PPE items based on selected PPE
-    for ppe_id, ppe_name in st.session_state.selected_ppe.items():
-        # Random chance to detect each PPE item (simulating AI detection)
-        import random
-        if random.random() > 0.3:  # 70% detection rate
-            # Generate random bounding box
-            x1 = random.randint(50, width - 150)
-            y1 = random.randint(50, height - 150)
-            x2 = x1 + random.randint(80, 120)
-            y2 = y1 + random.randint(80, 120)
+    """Simulate PPE detection with bounding boxes - FIXED VERSION"""
+    try:
+        # Convert PIL image to numpy array for OpenCV
+        img_array = np.array(image)
+        
+        # Convert RGB to BGR for OpenCV if needed
+        if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+            # Check if it's already BGR or RGB
+            if img_array[0, 0, 0] == image.getpixel((0, 0))[0]:  # It's RGB
+                img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        
+        # Get image dimensions
+        height, width = img_array.shape[:2]
+        
+        # Simulate detection results with bounding boxes
+        detection_results = []
+        
+        # Simulate detecting some PPE items based on selected PPE
+        for ppe_id, ppe_name in st.session_state.selected_ppe.items():
+            # Random chance to detect each PPE item (simulating AI detection)
+            import random
+            if random.random() > 0.3:  # 70% detection rate
+                # Generate random bounding box (ensure it's within image bounds)
+                box_width = random.randint(80, 120)
+                box_height = random.randint(80, 120)
+                x1 = random.randint(50, width - box_width - 50)
+                y1 = random.randint(50, height - box_height - 50)
+                x2 = x1 + box_width
+                y2 = y1 + box_height
+                
+                confidence = random.uniform(0.6, 0.95)
+                
+                detection_results.append({
+                    'class': ppe_name,
+                    'confidence': confidence,
+                    'bbox': [x1, y1, x2, y2]
+                })
+        
+        # Draw bounding boxes on the image
+        for detection in detection_results:
+            x1, y1, x2, y2 = detection['bbox']
+            confidence = detection['confidence']
+            class_name = detection['class']
             
-            confidence = random.uniform(0.6, 0.95)
+            # Choose color based on PPE type
+            colors = {
+                "Hard Hat": (0, 255, 0),  # Green
+                "Safety Glasses": (255, 255, 0),  # Yellow
+                "High-Vis Vest": (255, 165, 0),  # Orange
+                "Safety Gloves": (0, 255, 255),  # Cyan
+                "Safety Boots": (255, 0, 255),  # Magenta
+                "Hearing Protection": (128, 0, 128),  # Purple
+                "Face Shield": (255, 0, 0),  # Red
+                "Respirator": (0, 0, 255),  # Blue
+            }
             
-            detection_results.append({
-                'class': ppe_name,
-                'confidence': confidence,
-                'bbox': [x1, y1, x2, y2]
-            })
-    
-    # Draw bounding boxes on the image
-    for detection in detection_results:
-        x1, y1, x2, y2 = detection['bbox']
-        confidence = detection['confidence']
-        class_name = detection['class']
+            color = colors.get(class_name, (255, 255, 255))
+            
+            # Draw bounding box
+            cv2.rectangle(img_array, (x1, y1), (x2, y2), color, 3)
+            
+            # Draw label background
+            label = f"{class_name}: {confidence:.2f}"
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+            cv2.rectangle(img_array, (x1, y1 - label_size[1] - 10), (x1 + label_size[0], y1), color, -1)
+            
+            # Draw label text
+            cv2.putText(img_array, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
-        # Choose color based on PPE type
-        colors = {
-            "Hard Hat": (0, 255, 0),  # Green
-            "Safety Glasses": (255, 255, 0),  # Yellow
-            "High-Vis Vest": (255, 165, 0),  # Orange
-            "Safety Gloves": (0, 255, 255),  # Cyan
-            "Safety Boots": (255, 0, 255),  # Magenta
-            "Hearing Protection": (128, 0, 128),  # Purple
-            "Face Shield": (255, 0, 0),  # Red
-            "Respirator": (0, 0, 255),  # Blue
-        }
+        # Convert back to RGB for display
+        img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
         
-        color = colors.get(class_name, (255, 255, 255))
+        return Image.fromarray(img_array), detection_results
         
-        # Draw bounding box
-        cv2.rectangle(img_array, (x1, y1), (x2, y2), color, 3)
-        
-        # Draw label background
-        label = f"{class_name}: {confidence:.2f}"
-        label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-        cv2.rectangle(img_array, (x1, y1 - label_size[1] - 10), (x1 + label_size[0], y1), color, -1)
-        
-        # Draw label text
-        cv2.putText(img_array, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    
-    # Convert back to RGB for display
-    img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
-    
-    return Image.fromarray(img_array), detection_results
+    except Exception as e:
+        st.error(f"Error in detection simulation: {e}")
+        # Return original image if there's an error
+        return image, []
 
 def main():
     # Modern Header
@@ -592,7 +604,7 @@ def show_live_monitoring():
                     # Simulate processing time for real-time feel
                     time.sleep(0.5)
                     
-                    # Get image with bounding boxes
+                    # Get image with bounding boxes - FIXED CALL
                     processed_image, detections = simulate_ppe_detection_with_boxes(camera_image)
                     
                     # Display processed image with detections
@@ -742,8 +754,8 @@ def show_compliance_analytics(compliance_rate, daily_violations):
     col_chart1, col_chart2 = st.columns(2)
     
     with col_chart1:
-        # Compliance gauge
-        st.markdown(create_compliance_gauge(int(compliance_rate), "Overall Compliance Rate"))
+        # Compliance gauge - FIXED: Ensure percentage is valid
+        st.markdown(create_compliance_gauge(compliance_rate, "Overall Compliance Rate"))
     
     with col_chart2:
         # Daily violations trend
