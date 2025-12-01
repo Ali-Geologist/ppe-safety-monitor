@@ -1,28 +1,14 @@
 import streamlit as st
-try:
-    import cv2
-except ImportError:
-    st.error("OpenCV not installed properly")
-import pandas as pd
-import numpy as np
-from ultralytics import YOLO
-import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import time
 import os
-os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
 from pathlib import Path
 import tempfile
-from PIL import Image
-import plotly.express as px
 import io
 import requests
 import re
-import av
-import queue
-import threading
 import json
 
 # Try to import OpenCV with error handling
@@ -40,6 +26,20 @@ try:
 except ImportError as e:
     st.error(f"❌ YOLO import error: {e}")
     YOLO_AVAILABLE = False
+
+# Try to import PIL
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+# Try to import Plotly
+try:
+    import plotly.express as px
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
 
 # Set page configuration with SafetyEagle branding
 st.set_page_config(
@@ -130,6 +130,14 @@ st.markdown("""
         padding: 5px;
         background-color: #000;
     }
+    .ppe-color-box {
+        display: inline-block;
+        width: 15px;
+        height: 15px;
+        margin-right: 8px;
+        border-radius: 3px;
+        vertical-align: middle;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,7 +149,7 @@ if 'monitoring' not in st.session_state:
 if 'model' not in st.session_state:
     st.session_state.model = None
 if 'selected_ppe' not in st.session_state:
-    st.session_state.selected_ppe = {}  # Changed to dict with class_id: {"name": str, "color": tuple, "required": bool}
+    st.session_state.selected_ppe = {}
 if 'detection_settings' not in st.session_state:
     st.session_state.detection_settings = {
         'confidence': 0.5,
@@ -170,6 +178,8 @@ if 'current_frame' not in st.session_state:
     st.session_state.current_frame = None
 if 'capture' not in st.session_state:
     st.session_state.capture = None
+if 'last_detection_time' not in st.session_state:
+    st.session_state.last_detection_time = None
 
 # Load model with caching and get all classes
 @st.cache_resource(show_spinner="Loading SafetyEagle AI Model...")
@@ -181,12 +191,11 @@ def load_model_and_classes():
             
         # Try multiple possible model paths for Streamlit Cloud
         possible_paths = [
-            "models/best.pt",
             "best.pt", 
-            "./models/best.pt",
             "model/best.pt",
-            "ppe-detection.pt",  # Added common PPE model name
-            "yolov8n-ppe.pt"
+            "ppe-detection.pt",
+            "yolov8n-ppe.pt",
+            "yolov8n.pt"
         ]
         
         model = None
@@ -204,11 +213,16 @@ def load_model_and_classes():
                 continue
         
         if model is None:
-            # Fallback to nano model for demo
-            st.warning("⚠️ Local model not found. Using YOLOv8n for demo...")
-            model = YOLO('yolov8n.pt')
-            loaded_path = 'yolov8n.pt'
-            st.session_state.demo_mode = True
+            # Try to download a small model
+            try:
+                st.warning("⚠️ Local model not found. Trying to download YOLOv8n...")
+                model = YOLO('yolov8n.pt')
+                loaded_path = 'yolov8n.pt'
+                st.session_state.demo_mode = True
+                st.success("✅ Loaded YOLOv8n for demo")
+            except:
+                st.error("❌ Could not load any model")
+                return None, {}, "failed"
         
         # Get all available classes from the model
         if model and hasattr(model, 'names'):
@@ -225,7 +239,7 @@ def load_model_and_classes():
                 'boots': (255, 0, 255),     # Magenta for boots
                 'goggles': (0, 165, 255),   # Orange for goggles
                 'mask': (128, 0, 128),      # Purple for mask
-                'ear_protection': (255, 192, 203),  # Pink for ear protection
+                'ear': (255, 192, 203),     # Pink for ear protection
                 'safety': (255, 140, 0),    # Dark orange for general safety
                 'uniform': (0, 100, 0)      # Dark green for uniform
             }
@@ -335,7 +349,6 @@ def process_frame_for_detection(frame):
     
     confidence = st.session_state.detection_settings.get('confidence', 0.5)
     selected_classes = list(st.session_state.selected_ppe.keys())
-    speed_params = st.session_state.detection_settings.get('speed_params', {'imgsz': 640, 'half': False})
     
     # Run detection
     try:
@@ -344,7 +357,7 @@ def process_frame_for_detection(frame):
             conf=confidence,
             classes=selected_classes,
             verbose=False,
-            **speed_params
+            imgsz=640
         )
         
         # Draw custom bounding boxes
@@ -383,8 +396,8 @@ def process_frame_for_detection(frame):
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
     
     # Add timestamp
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cv2.putText(annotated_frame, timestamp, (annotated_frame.shape[1] - 200, 30), 
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    cv2.putText(annotated_frame, timestamp, (annotated_frame.shape[1] - 100, 30), 
                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     
     return annotated_frame, detected_classes, missing_ppe, num_detections
@@ -407,25 +420,6 @@ def update_violation_count(missing_ppe):
         st.session_state.compliance_count += 1
         return True
 
-def process_mobile_stream(frame):
-    """Process mobile camera stream frames"""
-    if frame is None:
-        return None
-    
-    # Process frame for PPE detection
-    annotated_frame, detected_classes, missing_ppe, num_detections = process_frame_for_detection(frame)
-    
-    # Update counts
-    is_compliant = update_violation_count(missing_ppe)
-    
-    # Add compliance status
-    status_color = (0, 255, 0) if is_compliant else (0, 0, 255)
-    status_text = "COMPLIANT" if is_compliant else "VIOLATION"
-    cv2.putText(annotated_frame, status_text, (annotated_frame.shape[1] - 150, 60), 
-               cv2.FONT_HERSHEY_SIMPLEX, 0.8, status_color, 2)
-    
-    return annotated_frame
-
 def start_camera_capture():
     """Start camera capture"""
     if st.session_state.capture is None:
@@ -434,7 +428,7 @@ def start_camera_capture():
             # Set camera properties for better performance
             st.session_state.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             st.session_state.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            st.session_state.capture.set(cv2.CAP_PROP_FPS, 30)
+            st.session_state.capture.set(cv2.CAP_PROP_FPS, 15)
             return True
         except Exception as e:
             st.error(f"❌ Failed to start camera: {e}")
@@ -490,7 +484,7 @@ def main():
                     color_html = f"rgb({color[0]}, {color[1]}, {color[2]})"
                     required = "✓" if ppe_info.get('required', True) else "○"
                     st.markdown(
-                        f'<span style="color:{color_html}; font-weight:bold;">■</span> '
+                        f'<div class="ppe-color-box" style="background-color:{color_html};"></div> '
                         f'**{ppe_info["name"]}** {required}',
                         unsafe_allow_html=True
                     )
@@ -505,15 +499,13 @@ def main():
     st.sidebar.markdown("### 🧭 Navigation")
     
     page = st.sidebar.radio("Go to", 
-        ["Live Monitoring", "Mobile Live Stream", "Class Selection", "Camera Setup", "Settings", "Dashboard", "Reports", "Deployment Guide"])
+        ["Live Monitoring", "Mobile Live Stream", "Class Selection", "Settings", "Dashboard", "Reports", "Deployment Guide"])
     
     st.session_state.current_page = page
     
     # Show the appropriate page based on selection
     if page == "Class Selection":
         show_class_selection()
-    elif page == "Camera Setup":
-        show_camera_setup()
     elif page == "Mobile Live Stream":
         show_mobile_live_stream()
     elif page == "Settings":
@@ -562,8 +554,9 @@ def show_mobile_live_stream():
     if st.session_state.selected_ppe:
         cols = st.columns(min(4, len(st.session_state.selected_ppe)))
         for idx, (class_id, ppe_info) in enumerate(list(st.session_state.selected_ppe.items())[:8]):
-            with cols[idx % len(cols)]:
-                color = ppe_info.get('color', (0, 255, 0))
+            col_idx = idx % len(cols)
+            color = ppe_info.get('color', (0, 255, 0))
+            with cols[col_idx]:
                 st.markdown(f"""
                 <div style="border-left: 4px solid rgb({color[0]}, {color[1]}, {color[2]});
                           padding: 0.5rem; margin: 0.25rem 0; background: #f8f9fa;">
@@ -598,7 +591,7 @@ def show_mobile_live_stream():
             st.rerun()
     
     # Live stream display
-    if st.session_state.live_streaming:
+    if st.session_state.live_streaming and CV2_AVAILABLE:
         st.subheader("🎥 Live PPE Monitoring")
         
         # Create placeholders
@@ -614,7 +607,11 @@ def show_mobile_live_stream():
                 return
         
         # Stream processing loop
-        while st.session_state.live_streaming:
+        max_iterations = 1000  # Safety limit
+        iteration = 0
+        
+        while st.session_state.live_streaming and iteration < max_iterations:
+            iteration += 1
             try:
                 if st.session_state.capture is None:
                     break
@@ -627,20 +624,24 @@ def show_mobile_live_stream():
                     time.sleep(0.1)
                     continue
                 
-                # Process frame
-                processed_frame = process_mobile_stream(frame)
+                # Process frame for PPE detection
+                annotated_frame, detected_classes, missing_ppe, num_detections = process_frame_for_detection(frame)
                 
-                if processed_frame is not None:
+                # Update counts
+                is_compliant = update_violation_count(missing_ppe)
+                
+                # Add compliance status to frame
+                status_color = (0, 255, 0) if is_compliant else (0, 0, 255)
+                status_text = "COMPLIANT" if is_compliant else "VIOLATION"
+                cv2.putText(annotated_frame, status_text, (annotated_frame.shape[1] - 150, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, status_color, 2)
+                
+                if annotated_frame is not None:
                     # Convert BGR to RGB for display
-                    rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                    rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                     
                     # Display frame with styling
-                    frame_placeholder.markdown(
-                        f'<div class="camera-frame">',
-                        unsafe_allow_html=True
-                    )
-                    frame_placeholder.image(rgb_frame, channels="RGB", use_column_width=True)
-                    frame_placeholder.markdown('</div>', unsafe_allow_html=True)
+                    frame_placeholder.image(rgb_frame, channels="RGB", use_column_width=True, caption="Live PPE Monitoring")
                 
                 # Update stats
                 with stats_placeholder.container():
@@ -665,25 +666,29 @@ def show_mobile_live_stream():
                         st.metric("Compliance Rate", f"{compliance_rate:.1f}%")
                 
                 # Show current status
-                if st.session_state.violations:
-                    last_missing = st.session_state.violations[-1]['missing_ppe']
-                    if last_missing:
-                        status_placeholder.warning(f"🚨 **Last Violation:** Missing {', '.join(last_missing)}")
-                    else:
-                        status_placeholder.success("✅ **Current Status:** All PPE compliant")
+                if missing_ppe:
+                    status_placeholder.warning(f"🚨 **Current Status:** Missing {', '.join(missing_ppe)}")
                 else:
-                    status_placeholder.info("ℹ️ **Status:** No violations yet")
+                    if detected_classes:
+                        detected_names = [st.session_state.selected_ppe[cid]['name'] for cid in detected_classes]
+                        status_placeholder.success(f"✅ **Current Status:** Detected {', '.join(detected_names[:2])}")
+                    else:
+                        status_placeholder.info("ℹ️ **Status:** No PPE detected")
                 
                 # Small delay to prevent overwhelming
-                time.sleep(0.03)
+                time.sleep(0.05)
                 
             except Exception as e:
-                status_placeholder.error(f"❌ Error in stream processing: {str(e)}")
+                status_placeholder.error(f"❌ Error in stream processing: {str(e)[:100]}")
                 time.sleep(1)
                 continue
         
         # Clean up when streaming stops
         stop_camera_capture()
+        
+    elif st.session_state.live_streaming and not CV2_AVAILABLE:
+        st.error("❌ OpenCV not available for live streaming")
+        st.session_state.live_streaming = False
         
     else:
         # Show static instructions when not streaming
@@ -712,28 +717,22 @@ def show_mobile_live_stream():
         cv2.putText(sample_img, "PPE Detection Preview", (150, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
-        # Add legend
-        cv2.rectangle(sample_img, (20, 380), (30, 390), (255, 255, 0), -1)  # Person
-        cv2.putText(sample_img, "Person", (40, 390), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        # Add counters
+        cv2.putText(sample_img, f"Violations: 0", (10, 100), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        cv2.putText(sample_img, f"Compliant: 0", (10, 130), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
-        cv2.rectangle(sample_img, (120, 380), (130, 390), (0, 255, 0), -1)  # Helmet
-        cv2.putText(sample_img, "Helmet", (140, 390), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        
-        cv2.rectangle(sample_img, (220, 380), (230, 390), (255, 0, 0), -1)  # Vest
-        cv2.putText(sample_img, "Safety Vest", (240, 390), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        
-        st.image(sample_img, caption="PPE Detection Preview (Similar to your example)", use_column_width=True)
+        # Convert to RGB for display
+        sample_img_rgb = cv2.cvtColor(sample_img, cv2.COLOR_BGR2RGB)
+        st.image(sample_img_rgb, caption="PPE Detection Preview (Similar to your example)", use_column_width=True)
         
         # Quick actions
         st.subheader("⚡ Quick Actions")
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("📸 Single Image Analysis", use_container_width=True):
-                st.session_state.current_page = "Live Monitoring"
-                st.rerun()
+            if st.button("📸 Upload Image", use_container_width=True):
+                show_image_upload()
         with col2:
             if st.button("🎯 Class Selection", use_container_width=True):
                 st.session_state.current_page = "Class Selection"
@@ -742,6 +741,47 @@ def show_mobile_live_stream():
             if st.button("📊 View Dashboard", use_container_width=True):
                 st.session_state.current_page = "Dashboard"
                 st.rerun()
+
+def show_image_upload():
+    """Show image upload interface"""
+    st.subheader("📸 Upload Image for Analysis")
+    
+    uploaded_file = st.file_uploader(
+        "Choose an image file",
+        type=['jpg', 'jpeg', 'png'],
+        help="Upload an image to analyze for PPE compliance"
+    )
+    
+    if uploaded_file is not None:
+        # Process image
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
+        if image is not None:
+            # Process single image
+            annotated_frame, detected_classes, missing_ppe, num_detections = process_frame_for_detection(image)
+            is_compliant = update_violation_count(missing_ppe)
+            
+            # Display results
+            col_img1, col_img2 = st.columns(2)
+            with col_img1:
+                st.subheader("Original Image")
+                st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), use_column_width=True)
+            with col_img2:
+                st.subheader("PPE Analysis")
+                st.image(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), use_column_width=True)
+            
+            # Show compliance status
+            if missing_ppe:
+                st.error(f"🚨 **SAFETY VIOLATION DETECTED!**")
+                st.warning(f"**Missing PPE:** {', '.join(missing_ppe)}")
+            else:
+                st.success(f"✅ **SAFETY COMPLIANCE VERIFIED**")
+                if detected_classes:
+                    detected_names = [st.session_state.selected_ppe[cid]['name'] for cid in detected_classes]
+                    st.info(f"**Detected PPE:** {', '.join(detected_names)}")
+                else:
+                    st.info("No PPE detected in the image")
 
 def show_live_monitoring():
     st.markdown('<h2 class="section-header">📹 Live Safety Monitoring</h2>', unsafe_allow_html=True)
@@ -763,95 +803,20 @@ def show_live_monitoring():
         # Camera options
         camera_mode = st.radio(
             "Select Input Source:",
-            ["Webcam", "IP Camera", "Test Mode", "Upload Image/Video"],
+            ["Webcam Live Stream", "Upload Image", "Test Mode"],
             help="Choose your video source"
         )
         
         # Webcam selection
-        if camera_mode == "Webcam":
+        if camera_mode == "Webcam Live Stream":
             st.info("Use your webcam for live PPE monitoring")
-            if st.button("📷 Start Webcam Monitoring", type="primary"):
+            if st.button("📷 Go to Live Stream", type="primary"):
                 st.session_state.current_page = "Mobile Live Stream"
                 st.rerun()
         
-        # IP Camera selection
-        elif camera_mode == "IP Camera":
-            if st.session_state.camera_urls:
-                selected_url = st.selectbox(
-                    "Select Saved Camera:",
-                    st.session_state.camera_urls,
-                    help="Choose from your saved camera URLs"
-                )
-                new_url = st.text_input("Or enter new camera URL:")
-                camera_url = new_url if new_url else selected_url
-            else:
-                camera_url = st.text_input(
-                    "Enter IP Camera URL:",
-                    placeholder="rtsp://username:password@ip:port/stream"
-                )
-            
-            if camera_url:
-                if st.button("🌐 Start IP Camera", type="primary"):
-                    if CV2_AVAILABLE:
-                        st.session_state.monitoring = True
-                        start_ip_camera_monitoring(camera_url)
-                    else:
-                        st.error("❌ OpenCV not available for camera streaming")
-                
-                if st.button("⏹️ Stop Monitoring"):
-                    st.session_state.monitoring = False
-                    st.rerun()
-            else:
-                st.warning("Please enter an IP camera URL first")
-        
-        # Upload image/video for analysis
-        elif camera_mode == "Upload Image/Video":
-            uploaded_file = st.file_uploader(
-                "Upload image or video for PPE analysis",
-                type=['jpg', 'jpeg', 'png', 'mp4', 'avi', 'mov'],
-                help="Upload an image or video to analyze for PPE compliance"
-            )
-            
-            if uploaded_file:
-                # Determine file type
-                file_ext = uploaded_file.name.split('.')[-1].lower()
-                
-                if file_ext in ['jpg', 'jpeg', 'png']:
-                    # Process image
-                    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-                    image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-                    
-                    if image is not None:
-                        # Process single image
-                        annotated_frame, detected_classes, missing_ppe, num_detections = process_frame_for_detection(image)
-                        is_compliant = update_violation_count(missing_ppe)
-                        
-                        # Display results
-                        col_img1, col_img2 = st.columns(2)
-                        with col_img1:
-                            st.subheader("Original Image")
-                            st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), use_column_width=True)
-                        with col_img2:
-                            st.subheader("PPE Analysis")
-                            st.image(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), use_column_width=True)
-                        
-                        # Show compliance status
-                        if missing_ppe:
-                            st.error(f"🚨 **SAFETY VIOLATION DETECTED!**")
-                            st.warning(f"**Missing PPE:** {', '.join(missing_ppe)}")
-                        else:
-                            st.success(f"✅ **SAFETY COMPLIANCE VERIFIED**")
-                            if detected_classes:
-                                detected_names = [st.session_state.selected_ppe[cid]['name'] for cid in detected_classes]
-                                st.info(f"**Detected PPE:** {', '.join(detected_names)}")
-                            else:
-                                st.info("No PPE detected in the image")
-                
-                elif file_ext in ['mp4', 'avi', 'mov']:
-                    # Process video
-                    st.info("Video processing selected. This may take a moment...")
-                    if st.button("🎬 Process Video", type="primary"):
-                        process_uploaded_video(uploaded_file)
+        # Upload image for analysis
+        elif camera_mode == "Upload Image":
+            show_image_upload()
         
         # Test mode
         elif camera_mode == "Test Mode":
@@ -870,7 +835,6 @@ def show_live_monitoring():
         - Monitoring: {len(st.session_state.selected_ppe)} PPE classes
         - Confidence: {st.session_state.detection_settings.get('confidence', 0.5)}
         - Speed: {st.session_state.detection_settings.get('speed', 'medium').title()}
-        - Frame Skip: {st.session_state.detection_settings.get('frame_skip', 3)}
         """)
     
     with col2:
@@ -887,7 +851,7 @@ def show_live_monitoring():
                 color = ppe_info.get('color', (0, 0, 0))
                 required = "✓" if ppe_info.get('required', True) else "○"
                 st.markdown(
-                    f'<span style="color:rgb({color[0]},{color[1]},{color[2]}); font-weight:bold;">■</span> '
+                    f'<div class="ppe-color-box" style="background-color:rgb({color[0]},{color[1]},{color[2]});"></div> '
                     f'{ppe_info["name"]} {required}',
                     unsafe_allow_html=True
                 )
@@ -913,6 +877,7 @@ def show_class_selection():
         st.error("❌ Model not loaded. Please wait for model initialization.")
         if st.button("🔄 Retry Model Loading"):
             st.session_state.model_loaded = False
+            initialize_app()
             st.rerun()
         return
     
@@ -934,7 +899,7 @@ def show_class_selection():
         'boots': (255, 0, 255),     # Magenta
         'goggles': (0, 165, 255),   # Orange
         'mask': (128, 0, 128),      # Purple
-        'ear_protection': (255, 192, 203),  # Pink
+        'ear': (255, 192, 203),     # Pink
         'safety': (255, 140, 0),    # Dark orange
         'uniform': (0, 100, 0)      # Dark green
     }
@@ -1054,144 +1019,22 @@ def show_class_selection():
         # Display selected classes with their colors
         st.write("**Selected PPE Classes:**")
         num_cols = min(4, len(selected_classes))
-        cols = st.columns(num_cols)
-        for idx, (class_id, ppe_info) in enumerate(selected_classes.items()):
-            with cols[idx % num_cols]:
-                color = ppe_info['color']
-                required = "✓" if ppe_info.get('required', True) else "○"
-                st.markdown(
-                    f'<div style="border-left: 4px solid rgb({color[0]}, {color[1]}, {color[2]}); '
-                    f'padding: 0.5rem; margin: 0.25rem 0; background: #f8f9fa;">'
-                    f'<strong>{ppe_info["name"]}</strong><br>'
-                    f'<small>ID: {class_id} | Required: {required}</small>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
+        if num_cols > 0:
+            cols = st.columns(num_cols)
+            for idx, (class_id, ppe_info) in enumerate(selected_classes.items()):
+                with cols[idx % num_cols]:
+                    color = ppe_info['color']
+                    required = "✓" if ppe_info.get('required', True) else "○"
+                    st.markdown(
+                        f'<div style="border-left: 4px solid rgb({color[0]}, {color[1]}, {color[2]}); '
+                        f'padding: 0.5rem; margin: 0.25rem 0; background: #f8f9fa;">'
+                        f'<strong>{ppe_info["name"]}</strong><br>'
+                        f'<small>Required: {required}</small>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
     else:
         st.warning("⚠️ No classes selected. Please select at least one class to enable monitoring.")
-
-def show_camera_setup():
-    st.markdown('<h2 class="section-header">📷 Camera Configuration</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.model_loaded:
-        st.error("❌ Please wait for model initialization on the Class Selection page first.")
-        return
-    
-    if not CV2_AVAILABLE:
-        st.error("❌ OpenCV not available. Camera functionality limited.")
-        st.info("🦅 SafetyEagle AI can still analyze uploaded videos and images.")
-    
-    st.subheader("1. IP Camera / Network Stream")
-    st.info("Connect to IP cameras, RTSP streams, or network cameras")
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        camera_url = st.text_input(
-            "IP Camera URL:",
-            placeholder="rtsp://username:password@ip:port/stream or http://ip:port/video"
-        )
-    
-    with col2:
-        st.write("")
-        st.write("")
-        if st.button("🔗 Test Connection"):
-            if camera_url:
-                is_valid, message = validate_ip_camera_url(camera_url)
-                if is_valid:
-                    with st.spinner("Testing camera connection..."):
-                        success, result = test_ip_camera(camera_url)
-                    if success:
-                        st.success(result)
-                        if camera_url not in st.session_state.camera_urls:
-                            st.session_state.camera_urls.append(camera_url)
-                            st.success("✅ Camera added to saved list!")
-                    else:
-                        st.error(result)
-                else:
-                    st.error(message)
-            else:
-                st.error("Please enter a camera URL")
-    
-    # Common camera URL examples
-    with st.expander("📋 Common Camera URL Formats"):
-        st.markdown("""
-        **RTSP Examples:**
-        - `rtsp://username:password@192.168.1.100:554/stream1`
-        - `rtsp://admin:password@camera_ip:554/11`
-        
-        **HTTP Examples:**
-        - `http://192.168.1.100:8080/video`
-        - `http://192.168.1.100:4747/video`
-        """)
-    
-    # Saved camera URLs
-    if st.session_state.camera_urls:
-        st.subheader("💾 Saved Camera URLs")
-        for i, url in enumerate(st.session_state.camera_urls):
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                st.code(url, language="text")
-            with col2:
-                if st.button("🔗 Test", key=f"test_{i}"):
-                    with st.spinner("Testing..."):
-                        success, result = test_ip_camera(url)
-                    if success:
-                        st.success(result)
-                    else:
-                        st.error(result)
-            with col3:
-                if st.button("🗑️ Remove", key=f"remove_{i}"):
-                    st.session_state.camera_urls.pop(i)
-                    st.rerun()
-
-def validate_ip_camera_url(url):
-    """Validate IP camera URL"""
-    if not url:
-        return False, "URL cannot be empty"
-    
-    # Basic URL validation
-    ip_pattern = r'^rtsp://|^http://|^https://'
-    if not re.match(ip_pattern, url):
-        return False, "URL must start with rtsp://, http://, or https://"
-    
-    return True, "URL looks valid"
-
-def test_ip_camera(url, timeout=5):
-    """Test if IP camera URL is accessible"""
-    if not CV2_AVAILABLE:
-        return False, "OpenCV not available for camera testing"
-        
-    try:
-        if url.startswith('rtsp://'):
-            # Test RTSP stream
-            cap = cv2.VideoCapture(url)
-            if cap.isOpened():
-                ret, frame = cap.read()
-                cap.release()
-                if ret and frame is not None:
-                    return True, "✅ RTSP camera connected successfully!"
-                else:
-                    return False, "❌ RTSP camera connected but no frame received"
-            else:
-                return False, "❌ Cannot connect to RTSP stream"
-        
-        elif url.startswith(('http://', 'https://')):
-            # Test HTTP stream
-            try:
-                response = requests.get(url, timeout=timeout, stream=True)
-                if response.status_code == 200:
-                    return True, "✅ HTTP camera connected successfully!"
-                else:
-                    return False, f"❌ HTTP camera returned status code: {response.status_code}"
-            except requests.exceptions.RequestException as e:
-                return False, f"❌ HTTP camera connection failed: {e}"
-        
-        else:
-            return False, "❌ Unsupported URL protocol"
-    
-    except Exception as e:
-        return False, f"❌ Camera test failed: {e}"
 
 def show_settings():
     st.markdown('<h2 class="section-header">⚙️ Detection Settings</h2>', unsafe_allow_html=True)
@@ -1206,7 +1049,7 @@ def show_settings():
     
     st.subheader("Detection Performance Settings")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
         confidence = st.slider(
@@ -1226,29 +1069,12 @@ def show_settings():
             help="Fast: Lower accuracy, Medium: Balanced, Accurate: Higher accuracy but slower"
         )
     
-    with col3:
-        frame_skip = st.slider(
-            "Frame Processing Rate",
-            min_value=1,
-            max_value=10,
-            value=st.session_state.detection_settings.get('frame_skip', 3),
-            help="Process every Nth frame (1=process all frames, 10=process every 10th frame)"
-        )
-    
-    # Map speed settings
-    speed_params = {
-        "fast": {"imgsz": 320, "half": False},
-        "medium": {"imgsz": 640, "half": False},
-        "accurate": {"imgsz": 1280, "half": False}
-    }
-    
     # Save settings
     if st.button("💾 Save Settings", type="primary"):
         st.session_state.detection_settings = {
             'confidence': confidence,
             'speed': speed_setting,
-            'frame_skip': frame_skip,
-            'speed_params': speed_params[speed_setting]
+            'frame_skip': 3
         }
         st.success("✅ Settings saved successfully!")
     
@@ -1262,96 +1088,6 @@ def show_settings():
         required_count = sum(1 for ppe in st.session_state.selected_ppe.values() if ppe.get('required', True))
         optional_count = len(st.session_state.selected_ppe) - required_count
         st.write(f"**Required:** {required_count} | **Optional:** {optional_count}")
-
-def start_ip_camera_monitoring(camera_url):
-    """IP camera monitoring with PPE detection"""
-    if not CV2_AVAILABLE:
-        st.error("❌ OpenCV not available for camera streaming")
-        return
-        
-    st.info(f"🌐 Connecting to IP camera: {camera_url}")
-    
-    confidence = st.session_state.detection_settings.get('confidence', 0.5)
-    frame_skip = st.session_state.detection_settings.get('frame_skip', 3)
-    speed_params = st.session_state.detection_settings.get('speed_params', {'imgsz': 640, 'half': False})
-    
-    # Test connection first
-    success, message = test_ip_camera(camera_url)
-    if not success:
-        st.error(f"❌ {message}")
-        st.session_state.monitoring = False
-        return
-    
-    st.success(message)
-    
-    # Open camera stream
-    cap = cv2.VideoCapture(camera_url)
-    
-    if not cap.isOpened():
-        st.error("❌ Failed to open camera stream")
-        st.session_state.monitoring = False
-        return
-    
-    # Run monitoring loop
-    frame_placeholder = st.empty()
-    status_placeholder = st.empty()
-    stats_placeholder = st.empty()
-    
-    frame_count = 0
-    start_time = time.time()
-    
-    while st.session_state.monitoring and cap.isOpened():
-        try:
-            ret, frame = cap.read()
-            
-            if not ret:
-                st.error("❌ Failed to read frame from camera")
-                break
-            
-            frame_count += 1
-            
-            if frame_count % frame_skip == 0:
-                # Process frame for PPE detection
-                annotated_frame, detected_classes, missing_ppe, num_detections = process_frame_for_detection(frame)
-                
-                # Update violation counts
-                is_compliant = update_violation_count(missing_ppe)
-                
-                # Display frame
-                annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                frame_placeholder.image(annotated_frame_rgb, caption="Live PPE Monitoring", use_column_width=True)
-                
-                # Update status
-                if missing_ppe:
-                    status_placeholder.warning(f"🚨 Missing PPE: {', '.join(missing_ppe)}")
-                else:
-                    if detected_classes:
-                        detected_names = [st.session_state.selected_ppe[cid]['name'] for cid in detected_classes]
-                        status_placeholder.success(f"✅ PPE Compliant: {', '.join(detected_names)}")
-                    else:
-                        status_placeholder.info("ℹ️ No PPE detected in frame")
-            
-            # Update stats every second
-            if frame_count % 30 == 0:
-                elapsed_time = time.time() - start_time
-                fps = frame_count / elapsed_time if elapsed_time > 0 else 0
-                
-                with stats_placeholder.container():
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Violations", st.session_state.violation_count)
-                    with col2:
-                        st.metric("Compliant", st.session_state.compliance_count)
-                    with col3:
-                        st.metric("FPS", f"{fps:.1f}")
-            
-            time.sleep(0.01)
-            
-        except Exception as e:
-            st.error(f"Monitoring error: {e}")
-            break
-    
-    cap.release()
 
 def start_test_mode():
     """Test mode with PPE detection simulation"""
@@ -1441,81 +1177,11 @@ def start_test_mode():
                     st.metric("Test Compliant", st.session_state.compliance_count)
             
             frame_count += 1
-            time.sleep(1.0)  # Slower for test mode
+            time.sleep(2.0)  # Slower for test mode
             
         except Exception as e:
             st.error(f"Test mode error: {e}")
             break
-
-def process_uploaded_video(uploaded_file):
-    """Process uploaded video"""
-    if not CV2_AVAILABLE:
-        st.error("❌ OpenCV not available for video processing")
-        return
-        
-    confidence = st.session_state.detection_settings.get('confidence', 0.5)
-    selected_classes = list(st.session_state.selected_ppe.keys())
-    speed_params = st.session_state.detection_settings.get('speed_params', {'imgsz': 640, 'half': False})
-    
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
-        tmp_file.write(uploaded_file.read())
-        video_path = tmp_file.name
-    
-    cap = cv2.VideoCapture(video_path)
-    frame_placeholder = st.empty()
-    progress_bar = st.progress(0)
-    status_placeholder = st.empty()
-    stats_placeholder = st.empty()
-    
-    frame_count = 0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
-    if total_frames == 0:
-        st.warning("⚠️ Could not determine video length. Processing with unknown duration.")
-        total_frames = 1000  # Default estimate
-    
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        # Process frame
-        annotated_frame, detected_classes, missing_ppe, num_detections = process_frame_for_detection(frame)
-        
-        # Update counts
-        is_compliant = update_violation_count(missing_ppe)
-        
-        # Display frame
-        annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-        frame_placeholder.image(annotated_frame_rgb, caption="Video Analysis - PPE Detection", use_column_width=True)
-        
-        # Update status
-        if missing_ppe:
-            status_placeholder.warning(f"Violations: {', '.join(missing_ppe)}")
-        else:
-            status_placeholder.info("No violations detected")
-        
-        # Update stats
-        with stats_placeholder.container():
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Frame", frame_count)
-            with col2:
-                if detected_classes:
-                    detected_names = [st.session_state.selected_ppe[cid]['name'] for cid in detected_classes]
-                    st.metric("Detected", ', '.join(detected_names[:2]))
-        
-        frame_count += 1
-        if total_frames > 0:
-            progress_bar.progress(min(frame_count / total_frames, 1.0))
-        time.sleep(0.03)
-    
-    cap.release()
-    try:
-        os.unlink(video_path)
-    except:
-        pass
-    st.success("✅ Video analysis completed!")
 
 def show_dashboard():
     st.markdown('<h2 class="section-header">📊 Safety Dashboard</h2>', unsafe_allow_html=True)
@@ -1561,43 +1227,7 @@ def show_dashboard():
         ])
         
         if not df.empty:
-            # Show violations by hour
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Violations by Hour")
-                hourly_data = df.groupby('Hour').size().reset_index(name='Count')
-                fig = px.bar(
-                    hourly_data,
-                    x='Hour',
-                    y='Count',
-                    title="Safety Violations by Hour of Day",
-                    color='Count',
-                    color_continuous_scale='Reds'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                st.subheader("Missing PPE Distribution")
-                # Count missing PPE items
-                all_missing = []
-                for missing_str in df['Missing PPE']:
-                    all_missing.extend([item.strip() for item in missing_str.split(',')])
-                
-                missing_counts = pd.Series(all_missing).value_counts()
-                if not missing_counts.empty:
-                    fig = px.pie(
-                        values=missing_counts.values,
-                        names=missing_counts.index,
-                        title="Most Frequently Missing PPE",
-                        hole=0.3
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("No missing PPE data available")
-            
             # Show recent violations table
-            st.subheader("Recent Violation Details")
             st.dataframe(
                 df.sort_values('Timestamp', ascending=False).head(10),
                 use_container_width=True,
@@ -1608,6 +1238,16 @@ def show_dashboard():
                     )
                 }
             )
+            
+            # Simple bar chart for violations by hour
+            st.subheader("Violations by Hour")
+            hourly_data = df.groupby('Hour').size()
+            if not hourly_data.empty:
+                chart_data = pd.DataFrame({
+                    'Hour': hourly_data.index,
+                    'Violations': hourly_data.values
+                })
+                st.bar_chart(chart_data.set_index('Hour'))
     else:
         st.info("No safety violations recorded yet. Start monitoring to see data.")
 
@@ -1620,14 +1260,12 @@ def show_reports():
     
     st.info(f"**Current Safety Monitoring:** {len(st.session_state.selected_ppe)} PPE classes selected")
     
-    if st.button("📊 Generate Excel Report", type="primary"):
-        generate_excel_report()
-    
+    # Create DataFrame for display
     df = pd.DataFrame([
         {
             'Timestamp': v['timestamp'],
-            'Missing Safety Items': v['missing_ppe'],
-            'Monitored Classes': v['selected_ppe'],
+            'Missing Safety Items': ', '.join(v['missing_ppe']),
+            'Monitored Classes': ', '.join(v['selected_ppe']),
             'Date': v['timestamp'].date(),
             'Time': v['timestamp'].time()
         }
@@ -1654,48 +1292,6 @@ def show_reports():
             st.session_state.compliance_count = 0
             st.rerun()
 
-def generate_excel_report():
-    """Generate Excel report"""
-    df = pd.DataFrame([
-        {
-            'Timestamp': v['timestamp'],
-            'Missing_Safety_Items': ', '.join(v['missing_ppe']),
-            'Monitored_Classes': ', '.join(v['selected_ppe']),
-            'Date': v['timestamp'].date(),
-            'Time': v['timestamp'].time(),
-            'Hour': v['timestamp'].hour
-        }
-        for v in st.session_state.violations
-    ])
-    
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Safety_Violations', index=False)
-        
-        summary_data = {
-            'Report_Generated': [datetime.now()],
-            'Total_Violations': [len(df)],
-            'Monitoring_Configuration': [f"{len(st.session_state.selected_ppe)} safety classes"],
-            'Most_Common_Violation': [df['Missing_Safety_Items'].mode()[0] if not df.empty else 'None'],
-            'Confidence_Setting': [st.session_state.detection_settings.get('confidence', 0.5)],
-            'Speed_Setting': [st.session_state.detection_settings.get('speed', 'medium')]
-        }
-        pd.DataFrame(summary_data).to_excel(writer, sheet_name='Executive_Summary', index=False)
-        
-        config_data = {
-            'Class_ID': list(st.session_state.selected_ppe.keys()),
-            'Class_Name': [ppe['name'] for ppe in st.session_state.selected_ppe.values()],
-            'Required': [ppe.get('required', True) for ppe in st.session_state.selected_ppe.values()]
-        }
-        pd.DataFrame(config_data).to_excel(writer, sheet_name='Safety_Configuration', index=False)
-    
-    st.download_button(
-        "📥 Download SafetyEagle Report",
-        output.getvalue(),
-        f"safetyeagle_report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
 def show_deployment_guide():
     st.markdown('<h2 class="section-header">🌐 SafetyEagle Deployment Guide</h2>', unsafe_allow_html=True)
     
@@ -1703,7 +1299,7 @@ def show_deployment_guide():
     
     st.subheader("🚀 Features:")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("""
@@ -1713,30 +1309,18 @@ def show_deployment_guide():
         - Missing PPE alerts
         - Violation counting
         - Compliance tracking
-        - Mobile/webcam support
-        - IP camera integration
+        - Webcam live streaming
+        - Image upload analysis
         """)
     
     with col2:
         st.markdown("""
         **🔧 Technical Stack:**
         - YOLOv8 object detection
-        - OpenCV video processing
+        - OpenCV image processing
         - Streamlit web interface
-        - Plotly analytics
-        - Pandas data handling
         - Real-time processing
-        """)
-    
-    with col3:
-        st.markdown("""
-        **📊 Analytics:**
-        - Live violation counters
-        - Compliance rate tracking
-        - Hourly violation patterns
-        - Missing PPE distribution
-        - Excel/CSV reports
-        - Real-time dashboards
+        - Pandas data handling
         """)
     
     st.subheader("🎯 PPE Detection System")
@@ -1746,24 +1330,25 @@ def show_deployment_guide():
     
     1. **Class Selection**: Choose which PPE items to monitor
     2. **Color Coding**: Each PPE type gets a distinct color
-    3. **Real-time Detection**: Live processing of video streams
+    3. **Real-time Detection**: Live processing of camera feed
     4. **Violation Alerting**: Red warnings for missing PPE
     5. **Compliance Tracking**: Counters update in real-time
     
     **Supported PPE Types:**
     - Helmets (Green boxes)
     - Safety Vests (Blue boxes)  
+    - Person detection (Yellow boxes)
     - Gloves, Boots, Goggles
     - Masks, Ear Protection
-    - Safety Uniforms
     - Custom PPE items
     
-    **Mobile/Webcam Features:**
-    - Direct camera access
-    - Real-time analysis
-    - Violation counting
-    - Compliance tracking
-    - Instant feedback
+    **Usage Instructions:**
+    1. Go to **Class Selection** to choose PPE classes
+    2. Set colors and mark items as required/optional
+    3. Go to **Mobile Live Stream** for webcam monitoring
+    4. Or use **Live Monitoring** for image uploads
+    5. View statistics in **Dashboard**
+    6. Download reports in **Reports** section
     """)
     
     st.success("🎉 **SafetyEagle AI PPE Monitoring is now operational!**")
